@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.log
+*.sqlite3
+*.egg-info/
+*.pkl
+*.h5
+*.pt
+
+# Environments
+.env
+venv/
+.env/
+
+# VS Code settings
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Node (if you use JS tools)
+node_modules/
