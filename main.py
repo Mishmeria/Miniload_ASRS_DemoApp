@@ -2,10 +2,10 @@ import flet as ft
 from datetime import datetime, timedelta
 from src.state import state
 from src.database import load_data
-from views.task_logs_view import create_data_table_view as create_task_logs_view
+#from views.task_logs_view import create_data_table_view as create_task_logs_view
 from views.asrs_logs_view import create_data_table_view as create_asrs_logs_view
 from views.statistics_view import create_statistics_view
-from views.prediction_view import create_prediction_view
+#from views.prediction_view import create_prediction_view
 from src.ui_components import on_date_change
 import threading
 
@@ -70,12 +70,12 @@ def on_route_change(route, page):
 
 def update_view(page, tab_name=None):
     """Update specific tab or all tab contents when filters change"""
-    if tab_name is None or tab_name == "TaskLogs":
-    # Update TaskLogs tab
-        page.tabs["TaskLogs"].content = ft.Container(
-            content=create_task_logs_view(page), 
-            expand=True
-        )
+    # if tab_name is None or tab_name == "TaskLogs":
+    # # Update TaskLogs tab
+    #     page.tabs["TaskLogs"].content = ft.Container(
+    #         content=create_task_logs_view(page), 
+    #         expand=True
+    #     )
     
     if tab_name is None or tab_name == "ASRS_Logs":
     # Update ASRS_Logs tab
@@ -91,12 +91,12 @@ def update_view(page, tab_name=None):
             expand=True
         )
     
-    if tab_name is None or tab_name == "Predictions":
-    # Update Predictions tab with the new charts
-        page.tabs["Predictions"].content = ft.Container(
-            content=create_prediction_view(page), 
-            expand=True
-        )
+    # if tab_name is None or tab_name == "Predictions":
+    # # Update Predictions tab with the new charts
+    #     page.tabs["Predictions"].content = ft.Container(
+    #         content=create_prediction_view(page), 
+    #         expand=True
+    #     )
 
     page.update()
 
@@ -114,13 +114,13 @@ def load_data_async(page):
     
     # Initialize only the first tab content to speed up initial loading
     current_tab = page.tabs_control.selected_index
-    tab_names = ["TaskLogs", "ASRS_Logs", "Statistics", "Predictions"]
+    tab_names = ["ASRS_Logs", "Statistics"] #"Predictions"]"TaskLogs", 
     update_view(page, tab_names[current_tab])
 
 def on_tab_change(e, page):
     """Load tab content only when tab is selected"""
     tab_index = e.control.selected_index
-    tab_names = ["TaskLogs", "ASRS_Logs", "Statistics", "Predictions"]
+    tab_names = ["ASRS_Logs", "Statistics"] # "Predictions"]"TaskLogs", 
     
     # Only update the selected tab
     update_view(page, tab_names[tab_index])
@@ -147,15 +147,15 @@ def main(page: ft.Page):
     page.overlay.append(page.date_picker)  # type: ignore
     
     # Create empty placeholder tabs initially
-    tab1 = ft.Tab(
-        text="TaskLogs",
-        icon=ft.Icon(name=ft.Icons.TABLE_CHART, color=ft.Colors.ORANGE),
-        content=ft.Container(
-            content=ft.ProgressRing(width=40, height=40),
-            alignment=ft.alignment.center,
-            expand=True
-        )
-    )
+    # tab1 = ft.Tab(
+    #     text="TaskLogs",
+    #     icon=ft.Icon(name=ft.Icons.TABLE_CHART, color=ft.Colors.ORANGE),
+    #     content=ft.Container(
+    #         content=ft.ProgressRing(width=40, height=40),
+    #         alignment=ft.alignment.center,
+    #         expand=True
+    #     )
+    # )
     
     tab2 = ft.Tab(
         text="ASRS_Logs", 
@@ -177,24 +177,24 @@ def main(page: ft.Page):
         )
     )
 
-    tab4 = ft.Tab(
-        text="Time Series",
-        icon=ft.Icon(name=ft.Icons.TIMELINE, color=ft.Colors.BLUE),
-        content=ft.Container(
-            content=ft.Text("Loading..."),
-            alignment=ft.alignment.center,
-            expand=True
-        )
-    )
+    # tab4 = ft.Tab(
+    #     text="Time Series",
+    #     icon=ft.Icon(name=ft.Icons.TIMELINE, color=ft.Colors.BLUE),
+    #     content=ft.Container(
+    #         content=ft.Text("Loading..."),
+    #         alignment=ft.alignment.center,
+    #         expand=True
+    #     )
+    # )
     
     # Store tabs for updates
-    page.tabs = {"TaskLogs": tab1, "ASRS_Logs": tab2, "Statistics": tab3, "Predictions": tab4}  # type: ignore
+    page.tabs = {"ASRS_Logs": tab2, "Statistics": tab3} # "Predictions": tab4} "TaskLogs": tab1,   # type: ignore
     
     # Create tabs control with lazy loading
     tabs_control = ft.Tabs(
         selected_index=0,
         animation_duration=300,
-        tabs=[tab1, tab2, tab3, tab4],
+        tabs=[tab2, tab3], #tab1 , tab4
         indicator_color=ft.Colors.ORANGE_600,
         on_change=lambda e: on_tab_change(e, page),
         expand=True

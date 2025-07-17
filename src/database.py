@@ -63,17 +63,17 @@ def load_data():
         ORDER BY TimeStamp DESC
     """
     
-    df_loops = pd.read_sql(loop_query, engine)
+    #df_loops = pd.read_sql(loop_query, engine)
     df_logs = pd.read_sql(logs_query, engine)
     
     # Preprocess
     df_logs["LINE"] = df_logs["LINE"].str.extract(r"LINE(\d+)-MP").astype("Int64")
-    df_loops.rename(columns={"TimeStart": "TimeStamp"}, inplace=True)
-    df_loops['TimeStamp'] = pd.to_datetime(df_loops['TimeStamp'])
+    #df_loops.rename(columns={"TimeStart": "TimeStamp"}, inplace=True)
+    #df_loops['TimeStamp'] = pd.to_datetime(df_loops['TimeStamp'])
     df_logs['TimeStamp'] = pd.to_datetime(df_logs['TimeStamp'])
     
-    state['df_loops'] = df_loops
+    #state['df_loops'] = df_loops
     state['df_logs'] = df_logs
     
     date_info = f" for {state['selected_date'].strftime('%Y-%m-%d')}" if 'selected_date' in state and state['selected_date'] else ""
-    print(f"Data loaded{date_info} | Loops: {len(df_loops)} | Logs: {len(df_logs)}")
+    print(f"Data loaded{date_info} Data Row : {len(df_logs)}") #| Loops: {len(df_loops)} | Logs:

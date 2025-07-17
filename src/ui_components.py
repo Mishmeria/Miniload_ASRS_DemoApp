@@ -150,11 +150,11 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
     """
     
     # Determine current filters based on table type
-    if table_type == "TaskLogs":
-        line_filter = state['line_loops']
-        status_filter = state['status_loops']
-        status_choices = ["All", "Complete", "Incomplete"]
-    elif table_type == "ASRS_Logs":
+    # if table_type == "TaskLogs":
+    #     line_filter = state['line_loops']
+    #     status_filter = state['status_loops']
+    #     status_choices = ["All", "Complete", "Incomplete"]
+    if table_type == "ASRS_Logs":
         line_filter = state['line_logs']
         status_filter = state['status_logs']
         status_choices = get_unique_statuses()
@@ -254,22 +254,24 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
 
 # Event handlers
 def on_line_filter_change(e, table_type, page):
-    if table_type == "TaskLogs":
-        state['line_loops'] = e.control.value
-        state['page_loops'] = 0
-    else:
-        state['line_logs'] = e.control.value
-        state['page_logs'] = 0
+    # if table_type == "TaskLogs":
+    #     state['line_loops'] = e.control.value
+    #     state['page_loops'] = 0
+    # else:
+    state['line_logs'] = e.control.value
+    state['page_logs'] = 0
+
     from main import update_view
     update_view(page)
 
 def on_status_filter_change(e, table_type, page):
-    if table_type == "TaskLogs":
-        state['status_loops'] = e.control.value
-        state['page_loops'] = 0
-    else:
-        state['status_logs'] = e.control.value
-        state['page_logs'] = 0
+    # if table_type == "TaskLogs":
+    #     state['status_loops'] = e.control.value
+    #     state['page_loops'] = 0
+    # else:
+    state['status_logs'] = e.control.value
+    state['page_logs'] = 0
+    
     from main import update_view
     update_view(page)
 
