@@ -18,7 +18,7 @@ def test_socket_connection(host, port):
         print(f"❌ Error testing socket connection: {e}")
         return False
     finally:
-        sock.close()
+        sock.close()  # type: ignore
 
 def test_http_connection(url):
     """Test if we can make an HTTP request to the URL"""

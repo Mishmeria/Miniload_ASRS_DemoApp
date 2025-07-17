@@ -1,10 +1,10 @@
 import flet as ft
 import pandas as pd
-from src.state import state
-from src.filters import apply_filters, get_status_stats
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from src.state import state
+from src.filters import apply_filters, get_status_stats
 from views.Status_Detail import ALARM_CATEGORIES, CATEGORY_COLORS , Alarm_status_map, Normal_status_map
 
 def create_dropdown(label, value, options, width, on_change):
@@ -288,7 +288,7 @@ def on_date_change(e, page):
     new_url = f"?date={date_str}"
     page.go(new_url)
 
-    from Notification import WEBAPP_URL
+    from src.Notification import WEBAPP_URL
     full_url = f"{WEBAPP_URL}{new_url}"
 
     page.snack_bar = ft.SnackBar(
@@ -301,7 +301,7 @@ def on_date_change(e, page):
     )
     page.snack_bar.open = True
     # Reload data from database with the new date filter
-    from database import load_data
+    from src.database import load_data
     load_data()
     
     # Hide loading indicator and update the view
@@ -320,7 +320,7 @@ def clear_date_filter(e, page):
     state['page_logs'] = 0
     
     # Reload data from database without date filter
-    from database import load_data
+    from src.database import load_data
     load_data()
     
     # Hide loading indicator and update the view
@@ -350,7 +350,7 @@ def refresh_data(e, page):
         state['status_logs'] = "All"
         # Note: We don't reset selected_date here to keep the current date filter
         
-        from database import load_data
+        from src.database import load_data
         load_data()
         from main import update_view
         update_view(page)
