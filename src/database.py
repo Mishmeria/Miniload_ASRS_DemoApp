@@ -37,27 +37,23 @@ def load_data():
         loop_date_filter = ""
         logs_date_filter = ""
     
-    loop_query = f"""
-        SELECT [LINE],[TimeStart],[TimeEnd],[PalletID],[Duration],[Status],
-               [AvgCurX],[AvgCurY],[AvgCurZ],[MaxCurX],[MaxCurY],[MaxCurZ],
-               [SD_CurX],[SD_CurY],[SD_CurZ],[AvgFreqX],[AvgFreqY],[AvgFreqZ],
-               [MaxFreqX],[MaxFreqY],[MaxFreqZ],[SD_FreqX],[SD_FreqY],[SD_FreqZ],[Description]
-        FROM [Dan_Database].[dbo].[ASRS_Loop_Logs]
-        {loop_date_filter}
-        ORDER BY TimeStart DESC
-    """
+    # loop_query = f"""
+    #     SELECT [LINE],[TimeStart],[TimeEnd],[PalletID],[Duration],[Status],
+    #            [AvgCurX],[AvgCurY],[AvgCurZ],[MaxCurX],[MaxCurY],[MaxCurZ],
+    #            [SD_CurX],[SD_CurY],[SD_CurZ],[AvgFreqX],[AvgFreqY],[AvgFreqZ],
+    #            [MaxFreqX],[MaxFreqY],[MaxFreqZ],[SD_FreqX],[SD_FreqY],[SD_FreqZ],[Description]
+    #     FROM [Dan_Database].[dbo].[ASRS_Loop_Logs]
+    #     {loop_date_filter}
+    #     ORDER BY TimeStart DESC
+    # """
     
     logs_query = f"""
         SELECT [TimeStamp],[LINE],[PalletID],[Duration],[Status],[Command],
                [PresentBay],[PresentLevel],[DistanceX],[DistanceY],
                [AVG_X_Current],[AVG_Y_Current],[AVG_Z_Current],
                [Max_X_Current],[Max_Y_Current],[Max_Z_Current],
-               [SD_X_Current],[SD_Y_Current],[SD_Z_Current],
                [AVG_X_Frequency],[AVG_Y_Frequency],[AVG_Z_Frequency],
-               [Max_X_Frequency],[Max_Y_Frequency],[Max_Z_Frequency],
-               [SD_X_Frequency],[SD_Y_Frequency],[SD_Z_Frequency],
-               [AVG_Speed_X],[AVG_Speed_Y],[Max_Speed_X],[Max_Speed_Y],
-               [SD_Speed_X],[SD_Speed_Y]
+               [Max_X_Frequency],[Max_Y_Frequency],[Max_Z_Frequency]
         FROM [Dan_Database].[dbo].[ASRS_Logs]
         {logs_date_filter}
         ORDER BY TimeStamp DESC
