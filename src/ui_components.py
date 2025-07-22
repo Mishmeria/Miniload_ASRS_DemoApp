@@ -290,13 +290,9 @@ def on_date_change(e, page):
     new_url = f"?date={date_str}"
     page.go(new_url)
 
-    from src.Notification import WEBAPP_URL
-    full_url = f"{WEBAPP_URL}{new_url}"
-
     page.snack_bar = ft.SnackBar(
         content=ft.Row([
-            ft.Text("Date filter applied. Share this link:"),
-            ft.TextButton("Copy URL", on_click=lambda _: page.set_clipboard(full_url))
+            ft.Text("Date filter applied."),
         ]),
         action="Dismiss",
         on_action=lambda _: None
