@@ -9,25 +9,11 @@ from src.ui_components import create_filter_controls, build_data_table, change_p
 
 def create_data_table_view(page):
     # Get data
+    df = state['df_logs']
     current_page = state['page_logs']
-    line_filter = state.get('line_logs', "All")
-    status_filter = state.get('status_logs', "All")
-
-    df = state.get('df_logs')
-
-    filtered_df = apply_filters(df, line_filter, status_filter, state.get('selected_date'), "Logs")
-
-    if filtered_df.empty:
-        return ft.Column([
-            create_filter_controls(page, "Logs"),
-            ft.Container(
-                content=ft.Text("No data available. Please check your connection to the API server.", 
-                               size=16, color=ft.Colors.GREY_700),
-                alignment=ft.alignment.center,
-                expand=True,
-                margin=ft.margin.only(top=50)
-            )
-        ])
+    line_filter = state['line_logs']
+    status_filter = state['status_logs']
+    filtered_df = apply_filters(df, line_filter, status_filter, state['selected_date'], "Logs")
 
     start_idx = current_page * state['rows_per_page']
     end_idx = start_idx + state['rows_per_page']

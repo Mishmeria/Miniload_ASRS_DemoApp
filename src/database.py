@@ -3,19 +3,24 @@ import requests
 from datetime import datetime, timedelta
 from src.state import state
 import json
+import os
+import random
+
+# Check if we should use mock data (can be set via environment variable)
+USE_MOCK_DATA = os.environ.get('USE_MOCK_DATA', 'false').lower() == 'true'
 
 # API Configuration - Connect to VPN Gateway
 API_CONFIG = {
-    'base_url': 'http://10.0.0.0:6969', # for linux cloud 10.0.0.0 , 127.0.0.1 for local test
+    'base_url': os.environ.get('API_URL', 'http://10.0.0.0:6969'),
     'endpoints': {
-        'logs': '/logs', # /logs for local test , /api/logs for cloud , /api/health too
+        'logs': '/logs', 
         'health': '/health'
     },
     'timeout': 30,  # seconds
     'headers': {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-Client-IP': '10.0.0.1'  # Identify client IP for logging 10.0.0.1 for cloud 127.0.0.1 for local
+        'X-Client-IP': os.environ.get('CLIENT_IP', '10.0.0.1')
     }
 }
 
@@ -48,8 +53,8 @@ class APIClient:
                 print(f"Response status: {response.status_code}")
                 print(f"Response URL: {response.url}")
 
-            response.raise_for_status()  # Raise an exception for bad status codes  # type: ignore
-            return response.json() # type: ignore
+            response.raise_for_status() # type: ignore
+            return response.json()  # type: ignore
             
         except requests.exceptions.RequestException as e:
             print(f"API request failed: {e}")
@@ -73,16 +78,81 @@ class APIClient:
         
         return self._make_request(API_CONFIG['endpoints']['logs'], params)
 
+def create_mock_data(selected_date=None):
+    """Create mock data for demonstration when API is not available"""
+    # Create a sample DataFrame with mock data
+    mock_data = []
+    
+    # Use selected date if available, otherwise use current date
+    if selected_date is None:
+        selected_date = datetime.now()
+    
+    # Generate random status codes
+    status_codes = [100, 200, 300, 400, 500]
+    
+    # Generate random messages
+    messages = [
+        "System operational",
+        "Task completed successfully",
+        "Warning: Low battery",
+        "Error: Connection lost",
+        "Critical: System failure",
+        "Maintenance required",
+        "Waiting for input",
+        "Processing task",
+        "Task queued",
+        "System idle"
+    ]
+    
+    # Generate random categories
+    categories = ["Normal", "Warning", "Error", "Critical", "Info"]
+    
+    # Generate mock data entries
+    for i in range(100):
+        line_number = random.randint(1, 10)
+        status_code = random.choice(status_codes)
+        timestamp = selected_date - timedelta(hours=random.randint(0, 23), minutes=random.randint(0, 59))
+        
+        mock_data.append({
+            "LINE": line_number,
+            "TimeStamp": timestamp.isoformat(),
+            "Status": status_code,
+            "Message": random.choice(messages),
+            "Category": random.choice(categories)
+        })
+    
+    df_logs = pd.DataFrame(mock_data)
+    df_logs["LINE"] = df_logs["LINE"].astype("Int64")
+    df_logs['TimeStamp'] = pd.to_datetime(df_logs['TimeStamp'])
+    
+    # Store in state
+    state['df_logs'] = df_logs
+    print(f"Mock data created with {len(df_logs)} rows")
+    return True
+
 def load_data():
     """Load data via API instead of direct database connection"""
-    client = APIClient()
-    
+    # Initialize state with empty DataFrame if not already present
     if 'df_logs' not in state:
         state['df_logs'] = pd.DataFrame()
-        
+    
+    # If mock data is enabled, use that instead of real API
+    if USE_MOCK_DATA:
+        print("Using mock data for demonstration")
+        return create_mock_data(state.get('selected_date'))
+    
+    client = APIClient()
+    
     # Check API health first
     if not client.check_health():
         print("API is not accessible. Please check VPN connection and API server.")
+        print(f"Attempted to connect to: {API_CONFIG['base_url']}")
+        
+        # Fall back to mock data if configured
+        if os.environ.get('FALLBACK_TO_MOCK', 'false').lower() == 'true':
+            print("Falling back to mock data")
+            return create_mock_data(state.get('selected_date'))
+        
         return False
     
     # Prepare date filter if selected
@@ -101,13 +171,16 @@ def load_data():
     
     if logs_data is None:
         print("Failed to fetch logs data from API")
+        
+        # Fall back to mock data if configured
+        if os.environ.get('FALLBACK_TO_MOCK', 'false').lower() == 'true':
+            print("Falling back to mock data")
+            return create_mock_data(state.get('selected_date'))
+        
         return False
     
     # Convert to DataFrame
     try:
-        # For see output .json
-        # print("Raw logs_data from API:")
-        # print(json.dumps(logs_data, indent=2))
         print(f"Received {len(logs_data) if logs_data else 0} log entries from API")
 
         df_logs = pd.DataFrame(logs_data or [])
@@ -129,6 +202,12 @@ def load_data():
         
         if df_logs.empty:
             print("No data returned from API")
+            
+            # Fall back to mock data if configured
+            if os.environ.get('FALLBACK_TO_MOCK', 'false').lower() == 'true':
+                print("Falling back to mock data")
+                return create_mock_data(state.get('selected_date'))
+            
             return False
         
         # Store in state
@@ -142,6 +221,12 @@ def load_data():
         
     except Exception as e:
         print(f"Error processing API response: {e}")
+        
+        # Fall back to mock data if configured
+        if os.environ.get('FALLBACK_TO_MOCK', 'false').lower() == 'true':
+            print("Falling back to mock data")
+            return create_mock_data(state.get('selected_date'))
+        
         return False
 
 # Alternative function for manual API calls

@@ -14,6 +14,12 @@ RUN apt-get update && \
     ACCEPT_EULA=Y apt-get install -y msodbcsql17 && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Set environment variables
+ENV USE_MOCK_DATA=true
+ENV FALLBACK_TO_MOCK=true
+ENV API_URL=http://10.0.0.0:6969
+ENV CLIENT_IP=10.0.0.1
+
 # Copy requirements file first for better caching
 COPY requirements.txt .
 
