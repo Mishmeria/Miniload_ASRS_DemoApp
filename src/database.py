@@ -77,6 +77,9 @@ def load_data():
     """Load data via API instead of direct database connection"""
     client = APIClient()
     
+    if 'df_logs' not in state:
+        state['df_logs'] = pd.DataFrame()
+        
     # Check API health first
     if not client.check_health():
         print("API is not accessible. Please check VPN connection and API server.")

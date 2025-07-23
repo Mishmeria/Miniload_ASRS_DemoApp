@@ -3,6 +3,10 @@ from datetime import datetime, timedelta
 from src.state import state
 
 def apply_filters(df, line_filter, status_filter, date_filter, table_type):
+
+    if df is None:
+        return pd.DataFrame()
+    
     filtered_df = df.copy()
     
     if line_filter != "All":
