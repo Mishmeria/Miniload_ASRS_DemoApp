@@ -1,38 +1,26 @@
-FROM python:3.10-slim
+FROM debian:bullseye
 
-# Set environment variables to non-interactive
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install system dependencies + MS SQL ODBC Driver
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        gnupg2 \
-        curl \
-        ca-certificates \
-        apt-transport-https \
-        lsb-release \
-        unixodbc \
-        unixodbc-dev && \
-    # Add Microsoft GPG key (using modern approach)
-    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg && \
-    # Add Microsoft repository with proper signing key reference
-    echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list && \
-    # Update package list
-    apt-get update && \
-    # Install MSSQL ODBC driver
-    ACCEPT_EULA=Y apt-get install -y msodbcsql17 && \
-    # Clean up
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-# Continue with Python setup
+# Set working directory
 WORKDIR /app
+
+# Install system dependencies and Python 3.10
+RUN apt-get update && \
+    apt-get install -y \
+    curl gnupg2 lsb-release apt-transport-https \
+    gcc g++ make python3 python3-pip python3-dev python3-venv \
+    unixodbc-dev && \
+    curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft.gpg && \
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list && \
+    apt-get update && \
+    ACCEPT_EULA=Y apt-get install -y msodbcsql17 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Copy all project files
 COPY . .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Python dependencies
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 EXPOSE 9999
-
-CMD ["python", "main.py"]
-
-# Reset DEBIAN_FRONTEND
-ENV DEBIAN_FRONTEND=
+# Run the renamed Python script
+CMD ["python3", "main.py"]
