@@ -21,6 +21,6 @@ COPY . .
 # Install Python dependencies
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-EXPOSE 9999
+EXPOSE 7777
 # Run the renamed Python script
 CMD ["python3", "main.py"]

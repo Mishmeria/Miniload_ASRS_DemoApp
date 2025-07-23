@@ -112,4 +112,4 @@ def main(page: ft.Page):
     threading.Thread(target=lambda: load_data_async(page)).start()
 
 if __name__ == "__main__":
-    ft.app(target=main, view=ft.WEB_BROWSER, host="0.0.0.0", port=9999) # type: ignore
+    ft.app(target=main, view=ft.WEB_BROWSER, host="0.0.0.0", port=7777) # type: ignore
