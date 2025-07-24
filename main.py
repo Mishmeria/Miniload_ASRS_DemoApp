@@ -4,10 +4,13 @@ from src.state import state
 from src.database import load_data
 from views.asrs_logs_view import create_data_table_view as create_asrs_logs_view
 from views.statistics_view import create_statistics_view
+from views.login_view import create_login_view
 from src.ui_components import on_date_change
 import threading
 
+# Initialize state variables
 state['selected_date'] = datetime.now()
+state['logged_in'] = False
 
 def update_view(page, tab_name=None):
     if tab_name is None or tab_name == "ASRS_Logs":
@@ -42,74 +45,120 @@ def on_tab_change(e, page):
 
     update_view(page, tab_names[tab_index])
 
+def on_route_change(route, page):
+    page.views.clear()
+    
+    if route.route == "/login" or route.route == "/":
+        # Show login page
+        page.views.append(
+            ft.View(
+                route="/login",
+                controls=[create_login_view(page)],
+                padding=0,
+                bgcolor=ft.Colors.BLUE_GREY_50
+            )
+        )
+    elif route.route == "/main":
+        # Check if user is logged in
+        if not state.get('logged_in', False):
+            page.go("/login")
+            return
+        
+        # Show main application
+        tab2 = ft.Tab(
+            text="ASRS_Logs", 
+            icon=ft.Icon(name=ft.Icons.MEMORY, color=ft.Colors.ORANGE),
+            content=ft.Container(
+                content=ft.Text("Loading..."),
+                alignment=ft.alignment.center,
+                expand=True
+            )
+        )
+        
+        tab3 = ft.Tab(
+            text="Statistics",
+            icon=ft.Icon(name=ft.Icons.ANALYTICS, color=ft.Colors.ORANGE),
+            content=ft.Container(
+                content=ft.Text("Loading..."),
+                alignment=ft.alignment.center,
+                expand=True
+            )
+        )
+    
+        # Store tabs for updates
+        page.tabs = {"ASRS_Logs": tab2, "Statistics": tab3}  # type: ignore
+    
+        # Create tabs control with lazy loading
+        tabs_control = ft.Tabs(
+            selected_index=0,
+            animation_duration=300,
+            tabs=[tab2, tab3],
+            indicator_color=ft.Colors.ORANGE_600,
+            on_change=lambda e: on_tab_change(e, page),
+            expand=True
+        )
+        page.tabs_control = tabs_control  # type: ignore
+        
+        # Add logout button to app bar
+        def logout(e):
+            state['logged_in'] = False
+            page.go("/login")
+        
+        logout_button = ft.IconButton(
+            icon=ft.Icons.LOGOUT,
+            tooltip="Logout",
+            on_click=logout
+        )
+        
+        # Main layout
+        main_content = ft.Column([
+            ft.Row([
+                ft.Text(f"Welcome, {state.get('current_user', 'User')}", weight=ft.FontWeight.BOLD),
+                ft.Container(expand=True),
+                logout_button
+            ]),
+            ft.Container(
+                content=tabs_control,
+                expand=True,
+                border_radius=8,
+                bgcolor=ft.Colors.WHITE,
+                border=ft.border.all(1, ft.Colors.GREY_300)
+            )
+        ], expand=True)
+        
+        page.views.append(
+            ft.View(
+                route="/main",
+                controls=[main_content],
+                padding=20
+            )
+        )
+        # Load data asynchronously after UI is rendered
+        threading.Thread(target=lambda: load_data_async(page)).start()
+
+    page.update()
+
 def main(page: ft.Page):
     page.title = "ASRS Database Viewer"
     page.theme_mode = ft.ThemeMode.LIGHT
-    page.padding = 20
-
+    
     # Create loading indicator
-    page.splash = ft.ProgressRing(width=100, height=100, stroke_width=5) # type: ignore
-    page.overlay.append(page.splash) # type: ignore
-    page.splash.visible = False # type: ignore
+    page.splash = ft.ProgressRing(width=100, height=100, stroke_width=5)  # type: ignore
+    page.overlay.append(page.splash)  # type: ignore
+    page.splash.visible = False  # type: ignore
     
     # Setup date picker
     page.date_picker = ft.DatePicker(  # type: ignore
         first_date=datetime(2020, 1, 1),
         last_date=datetime(2030, 12, 31),
         on_change=lambda e: on_date_change(e, page)
-        )
+    )
     page.overlay.append(page.date_picker)  # type: ignore
     
+    # Set up routing
+    page.on_route_change = lambda route: on_route_change(route, page)
     
-    tab2 = ft.Tab(
-        text="ASRS_Logs", 
-        icon=ft.Icon(name=ft.Icons.MEMORY, color=ft.Colors.ORANGE),
-        content=ft.Container(
-            content=ft.Text("Loading..."),
-            alignment=ft.alignment.center,
-            expand=True
-        )
-    )
-    
-    tab3 = ft.Tab(
-        text="Statistics",
-        icon=ft.Icon(name=ft.Icons.ANALYTICS, color=ft.Colors.ORANGE),
-        content=ft.Container(
-            content=ft.Text("Loading..."),
-            alignment=ft.alignment.center,
-            expand=True
-        )
-    )
-    
-    # Store tabs for updates
-    page.tabs = {"ASRS_Logs": tab2, "Statistics": tab3} # "Predictions": tab4} "TaskLogs": tab1,   # type: ignore
-    
-    # Create tabs control with lazy loading
-    tabs_control = ft.Tabs(
-        selected_index=0,
-        animation_duration=300,
-        tabs=[tab2, tab3], #tab1 , tab4
-        indicator_color=ft.Colors.ORANGE_600,
-        on_change=lambda e: on_tab_change(e, page),
-        expand=True
-    )
-    page.tabs_control = tabs_control # type: ignore
-    
-    # Main layout
-    main_content = ft.Column([
-        ft.Container(
-            content=tabs_control,
-            expand=True,
-            border_radius=8,
-            bgcolor=ft.Colors.WHITE,
-            border=ft.border.all(1, ft.Colors.GREY_300)
-        )
-    ], expand=True)
-    
-    page.add(main_content)
-
-    # Load data asynchronously after UI is rendered
-    threading.Thread(target=lambda: load_data_async(page)).start()
-
+    # Start with login page
+    page.go("/login")
 if __name__ == "__main__":
-    ft.app(target=main, view=ft.WEB_BROWSER, host="0.0.0.0", port=7777) # type: ignore
+    ft.app(target=main, view=ft.WEB_BROWSER, host="0.0.0.0", port=7777)  # type: ignore
