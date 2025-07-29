@@ -67,7 +67,7 @@ def on_route_change(route, page):
         # Show main application
         tab2 = ft.Tab(
             text="รายละเอียด", 
-            icon=ft.Icon(name=ft.Icons.MEMORY, color=ft.Colors.ORANGE),
+            icon=ft.Icon(name=ft.Icons.TABLE_VIEW, color=ft.Colors.ORANGE),
             content=ft.Container(
                 content=ft.Text("Loading..."),
                 alignment=ft.alignment.center,

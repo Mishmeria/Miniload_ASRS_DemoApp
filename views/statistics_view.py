@@ -9,13 +9,50 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.state import state
 from src.filters import get_status_stats, apply_filters
 from src.ui_components import create_filter_controls # type: ignore
-from src.charts import create_task_progress_gauge
 
 from views.Status_Detail import Alarm_status_map, Normal_status_map , ALARM_CATEGORIES , CATEGORY_COLORS
 
 # Alarm categories
 
 stats_cache = {'logs_stats': None, 'alarm_df': None, 'before_alarm_df': None, 'filter_state': None}
+
+def create_task_progress_gauge():
+    logs_stats, total = get_status_stats(state['df_logs'], state['line_logs'], state['selected_date'])
+    
+    if total == 0:
+        return ft.Container(
+            content=ft.Text("No TaskLogs data available", size=14, color=ft.Colors.GREY_600),
+            height=100, alignment=ft.alignment.center,
+            bgcolor=ft.Colors.GREY_50, border_radius=8,
+            border=ft.border.all(1, ft.Colors.GREY_300)
+        )
+    
+    complete_count = logs_stats[logs_stats["Status"] <= 100]["Count"].sum()
+    incomplete_count = logs_stats[logs_stats["Status"] > 100]["Count"].sum()
+
+    complete_percent = (complete_count / total) * 100 if total else 0
+    
+    header = ft.Row([
+        ft.Text(f"📦 TotalLogs: {total} records", size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
+        ft.Text(f"✅ Working: {complete_count} ({complete_percent:.1f}%)", size=14, color=ft.Colors.GREEN_700),
+        ft.Text(f"❌ Alarm : {incomplete_count} ({100-complete_percent:.1f}%)", size=14, color=ft.Colors.RED_700)
+    ], alignment=ft.MainAxisAlignment.CENTER, spacing=25)
+    
+    # Use ProgressBar with custom colors
+    progress_bar = ft.ProgressBar(
+        value=complete_percent / 100,  # Value between 0 and 1
+        bgcolor=ft.Colors.RED_400,     # Background color (red for alarms)
+        color=ft.Colors.GREEN_400,     # Progress color (green for working)
+        height=20,
+        border_radius=10,
+    )
+    
+    return ft.Container(
+        content=ft.Column([header, progress_bar, ft.Container(height=6)], spacing=5),
+        alignment=ft.alignment.center, padding=10,
+        bgcolor=ft.Colors.WHITE, border_radius=8,
+        border=ft.border.all(1, ft.Colors.GREY_300)
+    )
 
 def create_statistics_view(page):
     filter_controls = create_filter_controls(page=page, table_type=None, show_status=False, show_refresh=True)
@@ -140,8 +177,8 @@ def process_alarm_data():
 def create_main_layout(alarm_df, before_alarm_df):
     return ft.Container(
         content=ft.Row([
-            ft.Container(content=create_pre_alarm_table(before_alarm_df), expand=6),
-            ft.Container(content=create_alarm_categories_table(alarm_df), expand=4)
+            ft.Container(content=create_pre_alarm_table(before_alarm_df), expand=16),
+            ft.Container(content=create_alarm_frequency_table(alarm_df), expand=4)
         ], spacing=15),
         margin=ft.margin.only(top=10, bottom=15)
     )
@@ -178,51 +215,174 @@ def create_pre_alarm_table(before_alarm_df):
         available_cols = [col for col in display_cols if col in before_alarm_df.columns]
         display_df = before_alarm_df[available_cols].copy()
         
-        # Create the data table first
-        data_table = create_data_table(display_df, is_alarm_table=False)
+        if 'Alarm' in display_df.columns:
+            display_df['Detail'] = display_df['Alarm'].astype(int).map(
+                lambda x: Alarm_status_map.get(x, "ไม่ทราบสถานะ")
+            )
+            alarm_idx = list(display_df.columns).index('Alarm')
+            cols = list(display_df.columns)
+            if 'Detail' in cols:
+                cols.remove('Detail')
+            cols.insert(alarm_idx + 1, 'Detail')
+            display_df = display_df[cols]
         
-        # Wrap it in a scrollable container with fixed height
-        content = ft.Column(
-            [data_table],
-            scroll=ft.ScrollMode.AUTO,
-            expand=True
+        if 'Status' in display_df.columns:
+            display_df['Description'] = display_df['Status'].astype(int).map(
+                lambda x: Normal_status_map.get(x, "ไม่ทราบสถานะ")
+            )
+            status_idx = list(display_df.columns).index('Status')
+            cols = list(display_df.columns)
+            if 'Description' in cols:
+                cols.remove('Description')
+            cols.insert(status_idx + 1, 'Description')
+            display_df = display_df[cols]
+
+        column_display_names = {
+            'PresentLevel': 'Level',
+            'PresentBay': 'Bay'
+        }
+        
+        header_cells = []
+        for col in display_df.columns:
+            display_name = column_display_names.get(col, col)
+            header_cells.append(
+                ft.Container(
+                    content=ft.Text(display_name, weight=ft.FontWeight.BOLD, size=14),
+                    padding=8,
+                    alignment=ft.alignment.center,
+                    bgcolor=ft.Colors.GREY_100,
+                    border=ft.border.all(1, ft.Colors.GREY_400),
+                    width=200 if col in ['Detail', 'Description','AlarmTime', 'TimeStamp'] else 80,
+                    height=45
+                )
+            )
+        
+        header_row = ft.Row(header_cells, spacing=0)
+        
+        # Create data rows
+        data_rows = []
+        for idx, (_, row_data) in enumerate(display_df.iterrows()):
+            row_cells = []
+            
+            # Determine row background color
+            row_color = ft.Colors.with_opacity(0.05, ft.Colors.GREY_800) if idx % 2 == 0 else ft.Colors.WHITE
+            
+            # Special color for alarm rows
+            if 'Alarm' in row_data:
+                try:
+                    alarm_status = int(row_data['Alarm'])
+                    for category, codes in ALARM_CATEGORIES.items():
+                        if alarm_status in codes:
+                            row_color = ft.Colors.with_opacity(0.3, CATEGORY_COLORS[category])
+                            break
+                except:
+                    pass
+            
+            for col in display_df.columns:
+                value = row_data[col]
+                
+                # Format the value
+                if pd.isna(value):
+                    cell_text = "NULL"
+                elif isinstance(value, pd.Timestamp):
+                    cell_text = value.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    cell_text = str(value)
+                
+                # Determine text color and weight
+                text_color = None
+                text_weight = None
+                
+                if col == 'Alarm':
+                    text_color = ft.Colors.RED
+                    text_weight = ft.FontWeight.BOLD
+                elif col == 'Status':
+                    try:
+                        status_val = int(value)
+                        if status_val < 100:
+                            text_color = ft.Colors.GREEN
+                            text_weight = ft.FontWeight.BOLD
+                    except:
+                        pass
+                
+                row_cells.append(
+                    ft.Container(
+                        content=ft.Text(
+                            cell_text, 
+                            size=13,
+                            color=text_color,
+                            weight=text_weight,
+                            text_align=ft.TextAlign.CENTER,
+                            overflow=ft.TextOverflow.FADE
+                        ),
+                        padding=8,
+                        alignment=ft.alignment.center,
+                        bgcolor=row_color,
+                        border=ft.border.all(1, ft.Colors.GREY_300),
+                        width=200 if col in ['Detail', 'Description','AlarmTime', 'TimeStamp'] else 80,
+                        height=60
+                    )
+                )
+            
+            data_rows.append(ft.Row(row_cells, spacing=0))
+        
+        sticky_header = ft.Container(
+            content=header_row,
+            bgcolor=ft.Colors.GREY_100,
+            padding=0
+        )
+        content = ft.Column([
+            sticky_header,
+            ft.Column(
+                data_rows,
+                spacing=0,
+                expand=True
+            )
+        ], 
+        scroll=ft.ScrollMode.ALWAYS,
+        spacing=0,
+        expand=True
         )
     
-    return create_container_with_header("Pre-Alarm Events Analysis", content, height=480)
+    return create_container_with_header("เหตุการ์ณก่อนเกิด Alarm", content, height=480)
 
-def create_alarm_categories_table(alarm_df):
-    content = create_alarm_categories_matrix(alarm_df)
-    # Adjusted height to fit better on screen
-    return create_container_with_header("Alarm Categories by LINE", content, height=480)
+# Renamed function and simplified to just show alarm frequency by line
+def create_alarm_frequency_table(alarm_df):
+    content = create_alarm_frequency_summary(alarm_df)
+    return create_container_with_header("สรุปความถี่การเกิด Alarm", content, height=480)
 
-def create_alarm_categories_matrix(alarm_df):
-    # Adjusted cell width for better fit
-    CELL_WIDTH = 90
+# New function to create a simplified alarm frequency summary
+def create_alarm_frequency_summary(alarm_df):
+    CELL_WIDTH = 120
     
     if len(alarm_df) == 0:
         return ft.Text("No alarm data available", size=14, color=ft.Colors.GREY_700)
     
-    all_lines = [f"{i:02d}" for i in range(1, 9)]  # Use "01", "02", ..., "08"
-    line_counts = {line: {cat: 0 for cat in ALARM_CATEGORIES} for line in all_lines}
+    # Prepare data - count alarms by line
+    all_lines = [f"{i:02d}" for i in range(1, 9)]
+    srm_lines = {line: f"SRM{line}" for line in all_lines}
+    
+    line_counts = {line: 0 for line in all_lines}
+    status_counts = {}
     
     if 'LINE' in alarm_df.columns and 'Status' in alarm_df.columns:
         alarm_df['LINE_STR'] = alarm_df['LINE'].apply(
             lambda x: f"{int(x):02d}" if isinstance(x, (int, float)) else str(x)
         )
         
+        # Count alarms by line
         for _, row in alarm_df.iterrows():
             line, status = row['LINE_STR'], row['Status']
             if line in line_counts:
-                for cat, codes in ALARM_CATEGORIES.items():
-                    if status in codes:
-                        line_counts[line][cat] += 1
-                        break
+                line_counts[line] += 1
+            
+            # Also count by status code for the status breakdown table
+            if status not in status_counts:
+                status_counts[status] = {'count': 0, 'description': Alarm_status_map.get(status, "Unknown")}
+            status_counts[status]['count'] += 1
     
-    # Create fixed-width columns with custom containers
-    header_cells = []
-    
-    # LINE header cell
-    header_cells.append(
+    # Create header for line frequency table
+    header_cells = [
         ft.Container(
             width=CELL_WIDTH,
             height=50,
@@ -230,99 +390,75 @@ def create_alarm_categories_matrix(alarm_df):
             content=ft.Text("LINE", weight=ft.FontWeight.BOLD, size=14),
             bgcolor=ft.Colors.BLUE_50,
             border=ft.border.all(1, ft.Colors.GREY_400)
-        )
-    )
-    
-    # Category header cells with different background colors based on category
-    for cat in ALARM_CATEGORIES:
-        # Use a lighter version of the category color for the header background
-        header_bg_color = ft.Colors.with_opacity(0.2, CATEGORY_COLORS[cat])
-        
-        header_cells.append(
-            ft.Container(
-                width=CELL_WIDTH,
-                height=50,
-                alignment=ft.alignment.center,
-                content=ft.Row([
-                    ft.Text(cat, weight=ft.FontWeight.BOLD, size=14, color=CATEGORY_COLORS[cat])
-                ], alignment=ft.MainAxisAlignment.CENTER),
-                bgcolor=header_bg_color,  # Use category-specific color
-                border=ft.border.all(1, ft.Colors.GREY_400)
-            )
-        )
-    
-    # Total header cell
-    header_cells.append(
+        ),
         ft.Container(
             width=CELL_WIDTH,
             height=50,
             alignment=ft.alignment.center,
-            content=ft.Text("Total", weight=ft.FontWeight.BOLD, size=14),
+            content=ft.Text("Alarm Count", weight=ft.FontWeight.BOLD, size=14),
+            bgcolor=ft.Colors.BLUE_50,
+            border=ft.border.all(1, ft.Colors.GREY_400)
+        ),
+        ft.Container(
+            width=CELL_WIDTH,
+            height=50,
+            alignment=ft.alignment.center,
+            content=ft.Text("Percentage", weight=ft.FontWeight.BOLD, size=14),
             bgcolor=ft.Colors.BLUE_50,
             border=ft.border.all(1, ft.Colors.GREY_400)
         )
-    )
+    ]
     
-    # Rest of the function remains unchanged
-    # Create header row
     header_row = ft.Row(header_cells, spacing=0, tight=True)
     
-    # Create data rows
+    # Create data rows for line frequency
     data_rows = []
+    total_alarms = sum(line_counts.values())
+    
     for line in all_lines:
-        line_total = sum(line_counts[line].values())
-        if line_total == 0 and state['line_logs'] != "All":
+        count = line_counts[line]
+        if count == 0 and state['line_logs'] != "All":
             continue
+            
+        percentage = (count / total_alarms * 100) if total_alarms > 0 else 0
         
-        row_cells = []
-        
-        # LINE cell
-        row_cells.append(
+        row_cells = [
             ft.Container(
                 width=CELL_WIDTH,
                 height=40,
                 alignment=ft.alignment.center,
-                content=ft.Text(line, size=14, weight=ft.FontWeight.BOLD),
+                content=ft.Text(srm_lines[line], size=14, weight=ft.FontWeight.BOLD),
                 border=ft.border.all(1, ft.Colors.GREY_300)
-            )
-        )
-        
-        # Category cells
-        for cat in ALARM_CATEGORIES:
-            count = line_counts[line][cat]
-            row_cells.append(
-                ft.Container(
-                    width=CELL_WIDTH,
-                    height=40,
-                    alignment=ft.alignment.center,
-                    content=ft.Text(
-                        str(count), 
-                        size=14, 
-                        weight=ft.FontWeight.BOLD if count > 0 else None, 
-                        color=CATEGORY_COLORS[cat] if count > 0 else None
-                    ),
-                    border=ft.border.all(1, ft.Colors.GREY_300)
-                )
-            )
-        
-        # Total cell
-        row_cells.append(
+            ),
             ft.Container(
                 width=CELL_WIDTH,
                 height=40,
                 alignment=ft.alignment.center,
-                content=ft.Text(str(line_total), size=14, weight=ft.FontWeight.BOLD),
+                content=ft.Text(
+                    str(count), 
+                    size=14,
+                    weight=ft.FontWeight.BOLD if count > 0 else None,
+                    color=ft.Colors.RED if count > 0 else None
+                ),
+                border=ft.border.all(1, ft.Colors.GREY_300)
+            ),
+            ft.Container(
+                width=CELL_WIDTH,
+                height=40,
+                alignment=ft.alignment.center,
+                content=ft.Text(
+                    f"{percentage:.1f}%", 
+                    size=14,
+                    weight=ft.FontWeight.BOLD if count > 0 else None
+                ),
                 border=ft.border.all(1, ft.Colors.GREY_300)
             )
-        )
+        ]
         
         data_rows.append(ft.Row(row_cells, spacing=0, tight=True))
     
     # Create total row
-    total_row_cells = []
-    
-    # "Total" label cell
-    total_row_cells.append(
+    total_row_cells = [
         ft.Container(
             width=CELL_WIDTH,
             height=40,
@@ -330,176 +466,115 @@ def create_alarm_categories_matrix(alarm_df):
             content=ft.Text("Total", size=14, weight=ft.FontWeight.BOLD),
             bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.GREY_800),
             border=ft.border.all(1, ft.Colors.GREY_300)
-        )
-    )
-    
-    # Calculate column totals
-    column_totals = {cat: sum(line_counts[line][cat] for line in all_lines) for cat in ALARM_CATEGORIES}
-    
-    # Category total cells
-    for cat in ALARM_CATEGORIES:
-        total_row_cells.append(
-            ft.Container(
-                width=CELL_WIDTH,
-                height=40,
-                alignment=ft.alignment.center,
-                content=ft.Text(
-                    str(column_totals[cat]), 
-                    size=14, 
-                    weight=ft.FontWeight.BOLD, 
-                    color=CATEGORY_COLORS[cat] if column_totals[cat] > 0 else None
-                ),
-                bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.GREY_800),
-                border=ft.border.all(1, ft.Colors.GREY_300)
-            )
-        )
-    
-    # Grand total cell
-    total_row_cells.append(
+        ),
         ft.Container(
             width=CELL_WIDTH,
             height=40,
             alignment=ft.alignment.center,
-            content=ft.Text(str(sum(column_totals.values())), size=14, weight=ft.FontWeight.BOLD),
+            content=ft.Text(str(total_alarms), size=14, weight=ft.FontWeight.BOLD),
+            bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.GREY_800),
+            border=ft.border.all(1, ft.Colors.GREY_300)
+        ),
+        ft.Container(
+            width=CELL_WIDTH,
+            height=40,
+            alignment=ft.alignment.center,
+            content=ft.Text("100.0%", size=14, weight=ft.FontWeight.BOLD),
             bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.GREY_800),
             border=ft.border.all(1, ft.Colors.GREY_300)
         )
-    )
+    ]
     
     total_row = ft.Row(total_row_cells, spacing=0, tight=True)
     
-    # Combine all rows into a column
-    all_rows = [header_row] + data_rows + [total_row]
-    table_content = ft.Column(all_rows, spacing=0, tight=True)
+    # Create status breakdown table header
+    status_header_cells = [
+        ft.Container(
+            width=80,
+            height=40,
+            alignment=ft.alignment.center,
+            content=ft.Text("Status", weight=ft.FontWeight.BOLD, size=14),
+            bgcolor=ft.Colors.BLUE_50,
+            border=ft.border.all(1, ft.Colors.GREY_400)
+        ),
+        ft.Container(
+            width=80,
+            height=40,
+            alignment=ft.alignment.center,
+            content=ft.Text("Count", weight=ft.FontWeight.BOLD, size=14),
+            bgcolor=ft.Colors.BLUE_50,
+            border=ft.border.all(1, ft.Colors.GREY_400)
+        ),
+        ft.Container(
+            width=200,
+            height=40,
+            alignment=ft.alignment.center,
+            content=ft.Text("Description", weight=ft.FontWeight.BOLD, size=14),
+            bgcolor=ft.Colors.BLUE_50,
+            border=ft.border.all(1, ft.Colors.GREY_400)
+        )
+    ]
     
-    # Create a scrollable container for horizontal scrolling if needed
-    scrollable_container = ft.Column(
-        [table_content],
+    status_header_row = ft.Row(status_header_cells, spacing=0, tight=True)
+    
+    # Create status data rows
+    status_data_rows = []
+    sorted_statuses = sorted(status_counts.items(), key=lambda x: x[1]['count'], reverse=True)
+    
+    for status, data in sorted_statuses:
+        status_row_cells = [
+            ft.Container(
+                width=80,
+                height=35,
+                alignment=ft.alignment.center,
+                content=ft.Text(str(status), size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.RED),
+                border=ft.border.all(1, ft.Colors.GREY_300)
+            ),
+            ft.Container(
+                width=80,
+                height=35,
+                alignment=ft.alignment.center,
+                content=ft.Text(str(data['count']), size=14),
+                border=ft.border.all(1, ft.Colors.GREY_300)
+            ),
+            ft.Container(
+                width=200,
+                height=35,
+                alignment=ft.alignment.center,
+                content=ft.Text(data['description'], size=13, text_align=ft.TextAlign.CENTER),
+                border=ft.border.all(1, ft.Colors.GREY_300)
+            )
+        ]
+        
+        status_data_rows.append(ft.Row(status_row_cells, spacing=0, tight=True))
+    
+    # Combine all rows into columns
+    line_frequency_table = ft.Column([header_row] + data_rows + [total_row], spacing=0, tight=True)
+    status_breakdown_table = ft.Column([status_header_row] + status_data_rows, spacing=0, tight=True)
+    
+    # Add titles for each section
+    line_frequency_section = ft.Column([
+        ft.Container(
+            content=ft.Text("จำนวนการเกิด Alarm แยกตาม Line", size=16, weight=ft.FontWeight.BOLD),
+            margin=ft.margin.only(bottom=10)
+        ),
+        line_frequency_table,
+        ft.Container(height=20)  # Spacer
+    ])
+    
+    status_breakdown_section = ft.Column([
+        ft.Container(
+            content=ft.Text("รายละเอียด Alarm Status", size=16, weight=ft.FontWeight.BOLD),
+            margin=ft.margin.only(bottom=10)
+        ),
+        status_breakdown_table
+    ])
+    
+    # Combine both tables into a single column
+    combined_content = ft.Column(
+        [line_frequency_section, status_breakdown_section],
         scroll=ft.ScrollMode.AUTO,
         expand=True
     )
     
-    return scrollable_container
-
-def create_data_table(df, is_alarm_table=False):
-    if len(df) == 0:
-        return ft.Text("No data available", size=14, color=ft.Colors.GREY_700)
-    
-    display_df = df.copy()
-    
-    # Add status descriptions in correct order
-    if 'Status' in display_df.columns:
-        status_map_to_use = Alarm_status_map if is_alarm_table else Normal_status_map
-        display_df['Description'] = display_df['Status'].astype(int).map(
-            lambda x: status_map_to_use.get(x, "ไม่ทราบสถานะ")
-        )
-        # Reorder columns to put StatusDescription after Status
-        status_idx = list(display_df.columns).index('Status')
-        cols = list(display_df.columns)
-        if 'Description' in cols:
-            cols.remove('Description')
-        cols.insert(status_idx + 1, 'Description')
-        display_df = display_df[cols]
-    
-    if 'Alarm' in display_df.columns:
-        display_df['Detail'] = display_df['Alarm'].astype(int).map(
-            lambda x: Alarm_status_map.get(x, "ไม่ทราบสถานะ")
-        )
-        # Reorder columns to put Alarm Description after AlarmStatus
-        status_idx = list(display_df.columns).index('Alarm')
-        cols = list(display_df.columns)
-        if 'Detail' in cols:
-            cols.remove('Detail')
-        cols.insert(status_idx + 1, 'Detail')
-        display_df = display_df[cols]
-    
-    column_display_names = {
-        'PresentLevel': 'Level',
-        'PresentBay': 'Bay'
-    }
-    columns = []
-    for col in display_df.columns:
-        display_name = column_display_names.get(col, col)  # Use mapping if exists, otherwise use original name
-        columns.append(ft.DataColumn(
-            ft.Text(display_name, weight=ft.FontWeight.BOLD, size=14), 
-            tooltip=col  # Keep original name in tooltip for reference
-        ))
-
-    # Function to get alarm category color
-    def get_alarm_category_color(alarm_status):
-        if pd.isna(alarm_status):
-            return None
-        try:
-            status_code = int(alarm_status)
-            for category, codes in ALARM_CATEGORIES.items():
-                if status_code in codes:
-                    return ft.Colors.with_opacity(0.3, CATEGORY_COLORS[category])
-        except:
-            pass
-        return None
-    
-    rows = []
-    for idx, (_, row) in enumerate(display_df.iterrows()):
-        cells = []
-        
-        # Get row color based on alarm category
-        row_color = None
-        if 'Alarm' in row:
-            category_color = get_alarm_category_color(row['Alarm'])
-            if category_color:
-                row_color = category_color
-        
-        # If no alarm category color, use alternating row color
-        if not row_color:
-            row_color = ft.Colors.with_opacity(0.05, ft.Colors.GREY_800) if idx % 2 == 0 else None
-        
-        for col, value in row.items():
-            if pd.isna(value):
-                cell_text = "NULL"
-            elif isinstance(value, pd.Timestamp):
-                cell_text = value.strftime("%Y-%m-%d %H:%M:%S")
-            else:
-                cell_text = str(value)[:50]
-            
-            # Add special styling for alarm status columns
-            text_color = None
-            text_weight = None
-            if col == 'Alarm' and not pd.isna(value):
-                try:
-                    status_code = int(value)
-                    for category, codes in ALARM_CATEGORIES.items():
-                        if status_code in codes:
-                            text_weight = ft.FontWeight.BOLD
-                            text_color = ft.Colors.RED
-                            break
-                except:
-                    pass
-            elif col == 'Status' and not pd.isna(value):
-                try :
-                    status_code = int(value)
-                    text_weight = ft.FontWeight.BOLD
-                    text_color = ft.Colors.GREEN
-                except:
-                    pass
-            
-            cells.append(ft.DataCell(ft.Text(
-                cell_text, 
-                size=13, 
-                color=text_color,
-                weight=text_weight
-            )))
-        
-        rows.append(ft.DataRow(
-            cells=cells,
-            color=row_color
-        ))
-    
-    return ft.DataTable(
-        columns=columns, rows=rows,
-        border=ft.border.all(1, ft.Colors.GREY_400),
-        heading_row_color=ft.Colors.GREY_100,
-        heading_row_height=40, data_row_min_height=35,
-        horizontal_lines=ft.border.BorderSide(1, ft.Colors.GREY_300),
-        vertical_lines=ft.border.BorderSide(1, ft.Colors.GREY_300),
-        column_spacing=15, divider_thickness=1
-    )
+    return combined_content
