@@ -18,30 +18,67 @@ def update_view(page, tab_name=None):
             content=create_asrs_logs_view(page), 
             expand=True
         )
-    
     if tab_name is None or tab_name == "สรุป Alarm":
         page.tabs["สรุป Alarm"].content = ft.Container(
             content=create_statistics_view(page), 
             expand=True
         )
     
+    if tab_name is None or tab_name == "กราฟ":
+        # For now, just show a placeholder for the chart tab
+        # You can replace this with actual chart implementation later
+        page.tabs["กราฟ"].content = ft.Container(
+            content=create_chart_view(page),
+            expand=True
+        )
+    
     page.update()
+
+def create_chart_view(page):
+    # Placeholder for chart view - you can implement your actual chart here
+    filter_controls = ft.Row([
+        ft.Text("Chart View Coming Soon", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE)
+    ], alignment=ft.MainAxisAlignment.CENTER)
+    
+    # Example placeholder chart content
+    chart_content = ft.Container(
+        content=ft.Column([
+            ft.Text("ASRS Performance Charts", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_700),
+            ft.Container(height=20),
+            ft.Text("This tab will display performance charts and graphs", size=16),
+            ft.Container(height=30),
+            ft.Container(
+                content=ft.Icon(ft.Icons.BAR_CHART, size=100, color=ft.Colors.BLUE_300),
+                alignment=ft.alignment.center
+            ),
+            ft.Container(height=30),
+            ft.Text("Charts will be implemented in the next update", size=16, italic=True, color=ft.Colors.GREY_700),
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+        alignment=ft.alignment.center,
+        expand=True,
+        padding=50,
+        bgcolor=ft.Colors.WHITE,
+        border_radius=10,
+        border=ft.border.all(1, ft.Colors.BLUE_200)
+    )
+    
+    return ft.Column([filter_controls, chart_content], expand=True)
 
 def load_data_async(page):
     page.splash.visible = True
     page.update()
-    
+
     load_data()
     
     page.splash.visible = False
     
     current_tab = page.tabs_control.selected_index
-    tab_names = ["รายละเอียด", "สรุป Alarm"] 
+    tab_names = ["กราฟ", "สรุป Alarm", "รายละเอียด"] 
     update_view(page, tab_names[current_tab])
 
 def on_tab_change(e, page):
     tab_index = e.control.selected_index
-    tab_names = ["รายละเอียด", "สรุป Alarm"]
+    tab_names = ["กราฟ", "สรุป Alarm", "รายละเอียด"]
 
     update_view(page, tab_names[tab_index])
 
@@ -65,9 +102,9 @@ def on_route_change(route, page):
             return
         
         # Show main application
-        tab2 = ft.Tab(
-            text="รายละเอียด", 
-            icon=ft.Icon(name=ft.Icons.TABLE_VIEW, color=ft.Colors.ORANGE),
+        tab_chart = ft.Tab(
+            text="กราฟ",
+            icon=ft.Icon(name=ft.Icons.BAR_CHART, color=ft.Colors.BLUE),
             content=ft.Container(
                 content=ft.Text("Loading..."),
                 alignment=ft.alignment.center,
@@ -75,7 +112,7 @@ def on_route_change(route, page):
             )
         )
         
-        tab3 = ft.Tab(
+        tab_summary = ft.Tab(
             text="สรุป Alarm",
             icon=ft.Icon(name=ft.Icons.ANALYTICS, color=ft.Colors.ORANGE),
             content=ft.Container(
@@ -84,16 +121,26 @@ def on_route_change(route, page):
                 expand=True
             )
         )
+        
+        tab_details = ft.Tab(
+            text="รายละเอียด", 
+            icon=ft.Icon(name=ft.Icons.TABLE_VIEW, color=ft.Colors.GREEN),
+            content=ft.Container(
+                content=ft.Text("Loading..."),
+                alignment=ft.alignment.center,
+                expand=True
+            )
+        )
     
-        # Store tabs for updates
-        page.tabs = {"รายละเอียด": tab2, "สรุป Alarm": tab3}  # type: ignore
+        # Store tabs for updates - note the order here matches the visual order
+        page.tabs = {"กราฟ": tab_chart, "สรุป Alarm": tab_summary, "รายละเอียด": tab_details}  # type: ignore
     
-        # Create tabs control with lazy loading
+        # Create tabs control with lazy loading - put tab_chart first
         tabs_control = ft.Tabs(
-            selected_index=0,
+            selected_index=0,  # Start with the first tab (now "กราฟ")
             animation_duration=300,
-            tabs=[tab2, tab3],
-            indicator_color=ft.Colors.ORANGE_600,
+            tabs=[tab_chart, tab_summary, tab_details],  # Changed order here
+            indicator_color=ft.Colors.BLUE_600,
             on_change=lambda e: on_tab_change(e, page),
             expand=True
         )

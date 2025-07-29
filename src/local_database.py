@@ -30,22 +30,10 @@ def load_data():
         start_date = selected_date.strftime('%Y-%m-%d')
         end_date = next_day.strftime('%Y-%m-%d')
         
-        # Add date filter to queries
-        loop_date_filter = f"WHERE [TimeStart] >= '{start_date}' AND [TimeStart] < '{end_date}'"
         logs_date_filter = f"WHERE [TimeStamp] >= '{start_date}' AND [TimeStamp] < '{end_date}'"
     else:
-        loop_date_filter = ""
         logs_date_filter = ""
     
-    # loop_query = f"""
-    #     SELECT [LINE],[TimeStart],[TimeEnd],[PalletID],[Duration],[Status],
-    #            [AvgCurX],[AvgCurY],[AvgCurZ],[MaxCurX],[MaxCurY],[MaxCurZ],
-    #            [SD_CurX],[SD_CurY],[SD_CurZ],[AvgFreqX],[AvgFreqY],[AvgFreqZ],
-    #            [MaxFreqX],[MaxFreqY],[MaxFreqZ],[SD_FreqX],[SD_FreqY],[SD_FreqZ],[Description]
-    #     FROM [Dan_Database].[dbo].[ASRS_Loop_Logs]
-    #     {loop_date_filter}
-    #     ORDER BY TimeStart DESC
-    # """
     
     logs_query = f"""
         SELECT [TimeStamp],[LINE],[PalletID],[Duration],[Status],[Command],

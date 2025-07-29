@@ -3,8 +3,8 @@ from src.state import state
 
 def create_login_view(page):
     # Define username and password for simple authentication
-    username_value = "admin"
-    password_value = "1234"
+    username_value = ""
+    password_value = ""
     
     # Store these credentials in state for access in main.py
     state['valid_username'] = username_value

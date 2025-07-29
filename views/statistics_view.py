@@ -13,6 +13,9 @@ from src.ui_components import create_filter_controls # type: ignore
 from views.Status_Detail import Alarm_status_map, Normal_status_map , ALARM_CATEGORIES , CATEGORY_COLORS
 
 # Alarm categories
+table_height = 460
+cells_width = 180
+else_width = 70
 
 stats_cache = {'logs_stats': None, 'alarm_df': None, 'before_alarm_df': None, 'filter_state': None}
 
@@ -33,9 +36,9 @@ def create_task_progress_gauge():
     complete_percent = (complete_count / total) * 100 if total else 0
     
     header = ft.Row([
-        ft.Text(f"📦 TotalLogs: {total} records", size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
-        ft.Text(f"✅ Working: {complete_count} ({complete_percent:.1f}%)", size=14, color=ft.Colors.GREEN_700),
-        ft.Text(f"❌ Alarm : {incomplete_count} ({100-complete_percent:.1f}%)", size=14, color=ft.Colors.RED_700)
+        ft.Text(f"Logs ทั้งหมด : {total} records", size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
+        ft.Text(f"Status ปกติ : {complete_count} ครั้ง (คิดเป็น {complete_percent:.1f}% ของวัน)", size=14, color=ft.Colors.GREEN_700),
+        ft.Text(f"เกิด Alarm : {incomplete_count} ครั้ง (คิดเป็น {100-complete_percent:.1f}% ของวัน)", size=14, color=ft.Colors.RED_700)
     ], alignment=ft.MainAxisAlignment.CENTER, spacing=25)
     
     # Use ProgressBar with custom colors
@@ -50,7 +53,7 @@ def create_task_progress_gauge():
     return ft.Container(
         content=ft.Column([header, progress_bar, ft.Container(height=6)], spacing=5),
         alignment=ft.alignment.center, padding=10,
-        bgcolor=ft.Colors.WHITE, border_radius=8,
+        bgcolor=ft.Colors.WHITE, border_radius=5,
         border=ft.border.all(1, ft.Colors.GREY_300)
     )
 
@@ -107,7 +110,7 @@ def create_statistics_view(page):
             task_gauge = create_task_progress_gauge()
             main_content = create_main_layout(stats_cache['alarm_df'], stats_cache['before_alarm_df'])
             
-            main_container.content = ft.Column([filter_controls, task_gauge, main_content], scroll=ft.ScrollMode.AUTO)
+            main_container.content = ft.Column([filter_controls, task_gauge, main_content])
             page.update()
         except Exception as e:
             print(f"Error updating statistics view: {e}")
@@ -160,7 +163,7 @@ def process_alarm_data():
             
             if isinstance(previous_row['TimeStamp'], pd.Timestamp) and isinstance(alarm_row['TimeStamp'], pd.Timestamp):
                 duration_seconds = (alarm_row['TimeStamp'] - previous_row['TimeStamp']).total_seconds()
-                previous_row['Duration'] = f"{int(duration_seconds)}s"
+                previous_row['Duration'] = f"{int(duration_seconds)}"
             else:
                 previous_row['Duration'] = "Unknown"
             
@@ -177,8 +180,8 @@ def process_alarm_data():
 def create_main_layout(alarm_df, before_alarm_df):
     return ft.Container(
         content=ft.Row([
-            ft.Container(content=create_pre_alarm_table(before_alarm_df), expand=16),
-            ft.Container(content=create_alarm_frequency_table(alarm_df), expand=4)
+            ft.Container(content=create_pre_alarm_table(before_alarm_df), expand=15),
+            ft.Container(content=create_alarm_frequency_table(alarm_df), expand=5)
         ], spacing=15),
         margin=ft.margin.only(top=10, bottom=15)
     )
@@ -205,61 +208,86 @@ def create_pre_alarm_table(before_alarm_df):
     if len(before_alarm_df) == 0:
         content = ft.Text("No Pre-Alarm Data Found", text_align=ft.TextAlign.CENTER, size=16, color=ft.Colors.BLUE_300)
     else:
-        display_cols = ['LINE', 'PalletID', 'PresentLevel', 'PresentBay', 'AlarmTime', 'Alarm', 'Detail', 'TimeStamp', 'Status', 'Description', 'Duration']
+        # Make a copy to avoid modifying the original DataFrame
+        display_df = before_alarm_df.copy()
         
-        # Add missing columns with N/A values
+        # Add missing columns with N/A values FIRST
         for col in ['PalletID', 'PresentLevel', 'PresentBay']:
-            if col not in before_alarm_df.columns:
-                before_alarm_df[col] = "N/A"
-
-        available_cols = [col for col in display_cols if col in before_alarm_df.columns]
-        display_df = before_alarm_df[available_cols].copy()
+            if col not in display_df.columns:
+                display_df[col] = "N/A"
         
+        # Add Detail column for Alarm status
         if 'Alarm' in display_df.columns:
             display_df['Detail'] = display_df['Alarm'].astype(int).map(
                 lambda x: Alarm_status_map.get(x, "ไม่ทราบสถานะ")
             )
-            alarm_idx = list(display_df.columns).index('Alarm')
-            cols = list(display_df.columns)
-            if 'Detail' in cols:
-                cols.remove('Detail')
-            cols.insert(alarm_idx + 1, 'Detail')
-            display_df = display_df[cols]
         
+        # Add Description column for Status
         if 'Status' in display_df.columns:
             display_df['Description'] = display_df['Status'].astype(int).map(
                 lambda x: Normal_status_map.get(x, "ไม่ทราบสถานะ")
             )
-            status_idx = list(display_df.columns).index('Status')
-            cols = list(display_df.columns)
-            if 'Description' in cols:
-                cols.remove('Description')
-            cols.insert(status_idx + 1, 'Description')
-            display_df = display_df[cols]
-
-        column_display_names = {
-            'PresentLevel': 'Level',
-            'PresentBay': 'Bay'
+        
+        # Define the desired column order - EXPLICITLY include Duration
+        desired_cols = ['LINE', 'PalletID', 'PresentLevel', 'PresentBay', 'AlarmTime', 'Alarm', 'Detail', 'TimeStamp', 'Status', 'Description', 'Duration']
+        
+        # Only include columns that exist in the DataFrame
+        available_cols = [col for col in desired_cols if col in display_df.columns]
+        
+        # Select only the available columns in the desired order
+        display_df = display_df[available_cols]
+        
+        # SOLUTION 1: Optimized column widths to fit better
+        column_widths = {
+            'LINE': 60,
+            'PalletID': 80,
+            'PresentLevel': 60, 
+            'PresentBay': 60,   
+            'AlarmTime': 140,    
+            'Alarm': 70,
+            'Detail': 220,       
+            'TimeStamp': 140,  
+            'Status': 70,
+            'Description': 220,  
+            'Duration': 80      
         }
         
+        # Column display names mapping
+        column_display_names = {
+            'PresentLevel': 'Level',
+            'PresentBay': 'Bay',
+            'Duration': 'Duration',  # Simplified name to save space
+            'AlarmTime': 'เวลาที่เกิด Alarm',
+            'TimeStamp': 'เวลาของ Status ล่าสุดก่อนเกิด Alarm',
+            'Duration': 'ระยะเวลาก่อนเกิด Alarm (วินาที)' 
+        }
+        
+        # Create header cells with optimized widths
         header_cells = []
         for col in display_df.columns:
             display_name = column_display_names.get(col, col)
+            width = column_widths.get(col, 80)
+            
             header_cells.append(
                 ft.Container(
-                    content=ft.Text(display_name, weight=ft.FontWeight.BOLD, size=14),
-                    padding=8,
+                    content=ft.Text(
+                        display_name, 
+                        weight=ft.FontWeight.BOLD, 
+                        size=13,  # Slightly smaller font
+                        text_align=ft.TextAlign.CENTER
+                    ),
+                    padding=6,  # Reduced padding
                     alignment=ft.alignment.center,
                     bgcolor=ft.Colors.GREY_100,
                     border=ft.border.all(1, ft.Colors.GREY_400),
-                    width=200 if col in ['Detail', 'Description','AlarmTime', 'TimeStamp'] else 80,
-                    height=45
+                    width=width,
+                    height=80  # Reduced height
                 )
             )
         
         header_row = ft.Row(header_cells, spacing=0)
         
-        # Create data rows
+        # Create data rows with optimized widths
         data_rows = []
         for idx, (_, row_data) in enumerate(display_df.iterrows()):
             row_cells = []
@@ -280,18 +308,24 @@ def create_pre_alarm_table(before_alarm_df):
             
             for col in display_df.columns:
                 value = row_data[col]
+                width = column_widths.get(col, 80)
                 
-                # Format the value
+                # Format the value with truncation for long text
                 if pd.isna(value):
                     cell_text = "NULL"
                 elif isinstance(value, pd.Timestamp):
-                    cell_text = value.strftime("%Y-%m-%d %H:%M:%S")
+                    # Shorter timestamp format
+                    cell_text = value.strftime("%m-%d %H:%M:%S")
+                # elif col in ['Detail', 'Description'] and len(str(value)) > 20:
+                #     # Truncate long descriptions
+                #     cell_text = str(value)[:36] + "..."
                 else:
                     cell_text = str(value)
                 
                 # Determine text color and weight
                 text_color = None
                 text_weight = None
+                font_size = 12  # Smaller font for data
                 
                 if col == 'Alarm':
                     text_color = ft.Colors.RED
@@ -304,52 +338,70 @@ def create_pre_alarm_table(before_alarm_df):
                             text_weight = ft.FontWeight.BOLD
                     except:
                         pass
+                elif col == 'Duration':
+                    # Highlight duration in blue to make it stand out
+                    text_color = ft.Colors.BLUE_700
+                    text_weight = ft.FontWeight.BOLD
                 
                 row_cells.append(
                     ft.Container(
                         content=ft.Text(
                             cell_text, 
-                            size=13,
+                            size=font_size,
                             color=text_color,
                             weight=text_weight,
                             text_align=ft.TextAlign.CENTER,
-                            overflow=ft.TextOverflow.FADE
+                            
+                            max_lines=2
                         ),
-                        padding=8,
+                        padding=4,  # Reduced padding
                         alignment=ft.alignment.center,
                         bgcolor=row_color,
                         border=ft.border.all(1, ft.Colors.GREY_300),
-                        width=200 if col in ['Detail', 'Description','AlarmTime', 'TimeStamp'] else 80,
-                        height=60
+                        width=width,
+                        height=50  # Reduced height
                     )
                 )
             
             data_rows.append(ft.Row(row_cells, spacing=0))
         
-        sticky_header = ft.Container(
-            content=header_row,
-            bgcolor=ft.Colors.GREY_100,
-            padding=0
-        )
-        content = ft.Column([
-            sticky_header,
-            ft.Column(
-                data_rows,
-                spacing=0,
+        # SOLUTION 2: Make the table scrollable horizontally
+        table_content = ft.Column([
+            # Fixed header
+            ft.Container(
+                content=header_row,
+                padding=0
+            ),
+            # Scrollable data
+            ft.Container(
+                content=ft.Column(
+                    data_rows,
+                    scroll=ft.ScrollMode.ALWAYS,
+                    spacing=0,
+                    expand=True
+                ),
                 expand=True
             )
-        ], 
-        scroll=ft.ScrollMode.ALWAYS,
-        spacing=0,
-        expand=True
+        ], spacing=0, expand=True)
+        
+        # Wrap the table in a horizontal scroll container
+        content = ft.Row(
+            controls=[
+                ft.Container(
+                    content=table_content,
+                    width=1200,  # Fixed width to trigger horizontal scroll
         )
+    ],
+    scroll=ft.ScrollMode.ALWAYS,
+    expand=True
+)
     
-    return create_container_with_header("เหตุการ์ณก่อนเกิด Alarm", content, height=480)
+    return create_container_with_header("เหตุการ์ณก่อนเกิด Alarm", content, height=465)
 
 # Renamed function and simplified to just show alarm frequency by line
 def create_alarm_frequency_table(alarm_df):
     content = create_alarm_frequency_summary(alarm_df)
-    return create_container_with_header("สรุปความถี่การเกิด Alarm", content, height=480)
+    return create_container_with_header("สรุปความถี่การเกิด Alarm", content, height=table_height)
 
 # New function to create a simplified alarm frequency summary
 def create_alarm_frequency_summary(alarm_df):
