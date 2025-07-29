@@ -121,7 +121,7 @@ def build_data_table(df):
         expand=True
     )
 
-def get_unique_statuses():
+def get_unique_statuses(filter_type="All"):
     """Get all unique status values from the current dataframe"""
     df = state['df_logs']
     if df is None or len(df) == 0:
@@ -130,42 +130,37 @@ def get_unique_statuses():
     # Apply line filter but not status filter
     filtered_df = apply_filters(df, state['line_logs'], "All", None, "Logs")
     
-    # Get unique status values
     if 'Status' in filtered_df.columns:
-        statuses = filtered_df['Status'].dropna().unique().tolist()
-        return ["All"] + sorted(statuses)
+        if filter_type == "Alarm":
+            # Filter for status > 100 (alarm statuses)
+            alarm_statuses = filtered_df[filtered_df['Status'] > 100]['Status'].dropna().unique().tolist()
+            return ["All"] + sorted(alarm_statuses)
+        else:
+            # Get all statuses
+            statuses = filtered_df['Status'].dropna().unique().tolist()
+            return ["All"] + sorted(statuses)
     else:
         return ["All"]
 
+def filter_data_by_type(df, filter_type):
+    """Filter data based on filter type"""
+    if df is None or len(df) == 0:
+        return df
+    
+    if filter_type == "Alarm" and 'Status' in df.columns:
+        return df[df['Status'] > 100]
+    else:
+        return df
+    
 def create_filter_controls(page, table_type=None, show_status=True, show_refresh=True, title=None):
-    """
-    Create reusable filter controls for different tabs
-    
-    Args:
-        page: The flet page object
-        table_type: "TaskLogs", "ASRS_Logs", "charts", or None for Statistics
-        show_status: Whether to show status dropdown
-        show_refresh: Whether to show refresh button
-        title: Custom title for the controls
-    """
-    
-    # Determine current filters based on table type
-    # if table_type == "TaskLogs":
-    #     line_filter = state['line_loops']
-    #     status_filter = state['status_loops']
-    #     status_choices = ["All", "Complete", "Incomplete"]
-    if table_type == "ASRS_Logs":
-        line_filter = state['line_logs']
-        status_filter = state['status_logs']
-        status_choices = get_unique_statuses()
-    elif table_type == "charts":
-        line_filter = state['line_logs']
-        status_filter = state['status_logs']
-        status_choices = get_unique_statuses()
-    else:  # Statistics or other tabs
-        line_filter = state['line_logs']
-        status_filter = state['status_logs']
-        status_choices = ["All", "Alarm", "Work"]
+
+    if 'filter_choice' not in state:
+        state['filter_choice'] = "All"
+
+    line_filter = state['line_logs']
+    status_filter = state['status_logs']
+    filter_choice = state['filter_choice']
+    status_choices = get_unique_statuses(filter_choice)
     
     # Date display text
     date_text = f"Selected: {state['selected_date'].strftime('%Y-%m-%d') if state['selected_date'] else 'No date selected'}"
@@ -176,7 +171,7 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
     # LINE dropdown - always show
     left_controls.append(
         create_dropdown(
-            "LINE", 
+            "SRM", 
             line_filter, 
             ["All"] + [str(i) for i in range(1, 9)], 
             120, 
@@ -184,6 +179,17 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
         )
     )
     
+    if show_status:
+        left_controls.append(
+            create_dropdown(
+                "Filter Type", 
+                filter_choice, 
+                ["All", "Alarm"],
+                120, 
+                lambda e: on_filter_choice_change(e, table_type or "ASRS_Logs", page)
+            )
+        )
+
     # Status dropdown - conditional
     if show_status:
         left_controls.append(
@@ -205,12 +211,6 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
                 lambda e: page.open(page.date_picker), 
                 bgcolor=ft.Colors.BLUE_100
             ),
-            # create_button(
-            #     "Clear Date", 
-            #     ft.Icons.CLEAR, 
-            #     lambda e: clear_date_filter(e, page), 
-            #     bgcolor=ft.Colors.RED_100
-            # )
         ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
         ft.Container(
             content=ft.Text(date_text, size=12, weight=ft.FontWeight.W_500, text_align=ft.TextAlign.CENTER),
@@ -229,6 +229,16 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
                 "Refresh Data", 
                 ft.Icons.REFRESH, 
                 lambda e: refresh_data(e, page),
+                bgcolor=ft.Colors.ORANGE_600, 
+                color=ft.Colors.WHITE
+            )
+        )
+
+    right_controls.append(
+            create_button(
+                "Clear Filter", 
+                ft.Icons.CLEAR, 
+                lambda e: clear_filter(e, page),
                 bgcolor=ft.Colors.ORANGE_600, 
                 color=ft.Colors.WHITE
             )
@@ -254,21 +264,24 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
 
 # Event handlers
 def on_line_filter_change(e, table_type, page):
-    # if table_type == "TaskLogs":
-    #     state['line_loops'] = e.control.value
-    #     state['page_loops'] = 0
-    # else:
     state['line_logs'] = e.control.value
     state['page_logs'] = 0
 
     from main import update_view
     update_view(page)
 
+def on_filter_choice_change(e, table_type, page):
+    # Update the filter choice in state
+    state['filter_choice'] = e.control.value
+    
+    # Reset status filter to "All" when changing filter type
+    state['status_logs'] = "All"
+    state['page_logs'] = 0
+    
+    from main import update_view
+    update_view(page)
+
 def on_status_filter_change(e, table_type, page):
-    # if table_type == "TaskLogs":
-    #     state['status_loops'] = e.control.value
-    #     state['page_loops'] = 0
-    # else:
     state['status_logs'] = e.control.value
     state['page_logs'] = 0
     
@@ -287,8 +300,8 @@ def on_date_change(e, page):
     
     date_str = e.control.value.strftime('%Y-%m-%d')
     
-    new_url = f"?date={date_str}"
-    page.go(new_url)
+    # new_url = f"?date={date_str}"
+    # page.go(new_url)
 
     page.snack_bar = ft.SnackBar(
         content=ft.Row([
@@ -299,7 +312,7 @@ def on_date_change(e, page):
     )
     page.snack_bar.open = True
     # Reload data from database with the new date filter
-    from src.database import load_data
+    from src.local_database import load_data #change to src.database for cloud
     load_data()
     
     # Hide loading indicator and update the view
@@ -307,20 +320,16 @@ def on_date_change(e, page):
     from main import update_view
     update_view(page)
 
-def clear_date_filter(e, page):
+def clear_filter(e, page):
     # Show loading indicator
     page.splash.visible = True
     page.update()
     
     # Clear the selected date in state
-    state['selected_date'] = None
-    state['page_loops'] = 0
     state['page_logs'] = 0
-    
-    # Reload data from database without date filter
-    from src.database import load_data
-    load_data()
-    
+    state['line_logs'] = "All"
+    state['status_logs'] = "All"
+    state['filter_choice'] = "All"
     # Hide loading indicator and update the view
     page.splash.visible = False
     from main import update_view
@@ -340,12 +349,12 @@ def refresh_data(e, page):
     
     try:
         # Reset state
-        state['page_loops'] = 0
         state['page_logs'] = 0
         state['line_loops'] = "All"
         state['line_logs'] = "All"
         state['status_loops'] = "All"
         state['status_logs'] = "All"
+        state['filter_choice'] = "All"
         # Note: We don't reset selected_date here to keep the current date filter
         
         from src.database import load_data

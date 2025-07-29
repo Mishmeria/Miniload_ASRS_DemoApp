@@ -5,7 +5,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.state import state
 from src.filters import apply_filters
-from src.ui_components import create_filter_controls, build_data_table, change_page
+from src.ui_components import create_filter_controls, build_data_table, change_page, filter_data_by_type
 
 def create_data_table_view(page):
     # Get data
@@ -13,8 +13,10 @@ def create_data_table_view(page):
     current_page = state['page_logs']
     line_filter = state['line_logs']
     status_filter = state['status_logs']
+    filter_choice = state.get('filter_choice', 'All')
     filtered_df = apply_filters(df, line_filter, status_filter, state['selected_date'], "Logs")
-
+    filtered_df = filter_data_by_type(filtered_df, filter_choice)
+    
     start_idx = current_page * state['rows_per_page']
     end_idx = start_idx + state['rows_per_page']
     total_pages = max(1, (len(filtered_df) + state['rows_per_page'] - 1) // state['rows_per_page'])

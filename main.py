@@ -1,7 +1,7 @@
 import flet as ft
 from datetime import datetime, timedelta
 from src.state import state
-from src.database import load_data
+from src.local_database import load_data #for Cloud use src.database
 from views.asrs_logs_view import create_data_table_view as create_asrs_logs_view
 from views.statistics_view import create_statistics_view
 from views.login_view import create_login_view
@@ -13,14 +13,14 @@ state['selected_date'] = datetime.now()
 state['logged_in'] = False
 
 def update_view(page, tab_name=None):
-    if tab_name is None or tab_name == "ASRS_Logs":
-        page.tabs["ASRS_Logs"].content = ft.Container(
+    if tab_name is None or tab_name == "รายละเอียด":
+        page.tabs["รายละเอียด"].content = ft.Container(
             content=create_asrs_logs_view(page), 
             expand=True
         )
     
-    if tab_name is None or tab_name == "Statistics":
-        page.tabs["Statistics"].content = ft.Container(
+    if tab_name is None or tab_name == "สรุป Alarm":
+        page.tabs["สรุป Alarm"].content = ft.Container(
             content=create_statistics_view(page), 
             expand=True
         )
@@ -36,12 +36,12 @@ def load_data_async(page):
     page.splash.visible = False
     
     current_tab = page.tabs_control.selected_index
-    tab_names = ["ASRS_Logs", "Statistics"] 
+    tab_names = ["รายละเอียด", "สรุป Alarm"] 
     update_view(page, tab_names[current_tab])
 
 def on_tab_change(e, page):
     tab_index = e.control.selected_index
-    tab_names = ["ASRS_Logs", "Statistics"]
+    tab_names = ["รายละเอียด", "สรุป Alarm"]
 
     update_view(page, tab_names[tab_index])
 
@@ -66,7 +66,7 @@ def on_route_change(route, page):
         
         # Show main application
         tab2 = ft.Tab(
-            text="ASRS_Logs", 
+            text="รายละเอียด", 
             icon=ft.Icon(name=ft.Icons.MEMORY, color=ft.Colors.ORANGE),
             content=ft.Container(
                 content=ft.Text("Loading..."),
@@ -76,7 +76,7 @@ def on_route_change(route, page):
         )
         
         tab3 = ft.Tab(
-            text="Statistics",
+            text="สรุป Alarm",
             icon=ft.Icon(name=ft.Icons.ANALYTICS, color=ft.Colors.ORANGE),
             content=ft.Container(
                 content=ft.Text("Loading..."),
@@ -86,7 +86,7 @@ def on_route_change(route, page):
         )
     
         # Store tabs for updates
-        page.tabs = {"ASRS_Logs": tab2, "Statistics": tab3}  # type: ignore
+        page.tabs = {"รายละเอียด": tab2, "สรุป Alarm": tab3}  # type: ignore
     
         # Create tabs control with lazy loading
         tabs_control = ft.Tabs(
@@ -112,11 +112,6 @@ def on_route_change(route, page):
         
         # Main layout
         main_content = ft.Column([
-            ft.Row([
-                ft.Text(f"Welcome, {state.get('current_user', 'User')}", weight=ft.FontWeight.BOLD),
-                ft.Container(expand=True),
-                logout_button
-            ]),
             ft.Container(
                 content=tabs_control,
                 expand=True,
