@@ -10,200 +10,279 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.state import state
 from src.filters import apply_filters, get_status_stats
-from src.ui_components import create_filter_controls
+from src.ui_components import create_filter_controls ,filter_data_by_type
 from views.Status_Detail import Alarm_status_map, Normal_status_map, ALARM_CATEGORIES, CATEGORY_COLORS
 
-# Cache for chart data to avoid recalculating
-chart_cache = {
-    'alarm_data': None,
-    'time_series_data': None,
-    'filter_state': None
-}
-
 def create_chart_view(page):
-    filter_controls = create_filter_controls(page=page, table_type=None, show_status=False, show_refresh=True)
-    
-    loading_view = ft.Column([
-        ft.Container(
-            content=ft.Column([
-                ft.ProgressRing(width=50, height=50),
-                ft.Text("Loading chart data...", size=16)
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-            alignment=ft.alignment.center, 
-            expand=True
-        )
-    ])
-    
-    main_container = ft.Container(
-        content=ft.Column([filter_controls, loading_view], scroll=ft.ScrollMode.AUTO),
-        padding=15, 
-        expand=True
+    df = state['df_logs']
+    line_filter = state['line_logs']
+    status_filter = state['status_logs']
+    filter_choice = state.get('filter_choice', 'All')
+    filtered_df = apply_filters(df, line_filter, status_filter, state['selected_date'], "Logs")
+    filtered_df = filter_data_by_type(filtered_df, filter_choice)
+
+    filter_controls = create_filter_controls(
+        page=page,
+        table_type="ASRS_Logs",
+        show_status=True,
+        show_refresh=True
     )
     
-    def load_data_async():
-        time.sleep(0.1)
-        # Create a simple tuple for comparison to check if we need to reload data
-        current_filter_state = (str(state['line_logs']), state['selected_date'].strftime("%Y-%m-%d") if hasattr(state['selected_date'], 'strftime') else str(state['selected_date']))
+    # Create status frequency chart
+    def create_status_frequency_chart():
+        if filtered_df.empty:
+            return ft.Text("No data available to display", size=16, color=ft.Colors.GREY_700)
         
-        # Check if we need to reload data
-        should_reload = (chart_cache['filter_state'] is None or 
-                         chart_cache['filter_state'] != current_filter_state or 
-                         chart_cache['alarm_data'] is None)
+        # Count status occurrences
+        status_counts = filtered_df['Status'].value_counts().reset_index()
+        status_counts.columns = ['Status', 'Count']
+        status_counts = status_counts.sort_values('Count', ascending=False)
         
-        if should_reload:
-            try:
-                # Process data for charts
-                alarm_data, time_series_data = process_chart_data()
-                
-                chart_cache.update({
-                    'alarm_data': alarm_data,
-                    'time_series_data': time_series_data,
-                    'filter_state': current_filter_state
-                })
-            except Exception as e:
-                print(f"Error loading chart data: {e}")
-                # Fallback to empty data if there's an error
-                chart_cache.update({
-                    'alarm_data': {},
-                    'time_series_data': {},
-                    'filter_state': current_filter_state
-                })
+        max_count = status_counts['Count'].max()
+        chart_height = 470  # Fixed chart area height
         
-        try:
-            # Create the charts
-            task_gauge = create_task_progress_gauge()
-            charts_content = create_charts_layout(
-                chart_cache['alarm_data'], 
-                chart_cache['time_series_data']
+        # Chart Title
+        chart_title = ft.Container(
+            content=ft.Text(
+                "กราฟการเกิด Status ในแต่ละวัน",
+                size=20,
+                weight=ft.FontWeight.BOLD,
+                color=ft.Colors.BLUE_800,
+                text_align=ft.TextAlign.CENTER
+            ),
+            alignment=ft.alignment.center,
+            padding=ft.padding.only(bottom=10)
+        )
+        
+        # Create Y-axis labels with fixed intervals (0, 50, 100, 150, 200, etc.)
+        # Round max_count up to nearest nice number for better scale
+        scale_max = max_count
+        if max_count <= 50:
+            scale_max = 50
+        elif max_count <= 100:
+            scale_max = 100
+        elif max_count <= 200:
+            scale_max = 200
+        elif max_count <= 500:
+            scale_max = 500
+        else:
+            # Round up to nearest 100
+            scale_max = ((max_count // 100) + 1) * 100
+        
+        num_y_labels = 6  # Always show 6 labels
+        step = scale_max // (num_y_labels - 1)  # Step between labels
+        label_spacing = chart_height / (num_y_labels - 1)
+        
+        y_labels = []
+        for i in range(num_y_labels):
+            # Calculate value from bottom to top (0 at bottom, scale_max at top)
+            value = step * i
+            y_labels.append(
+                ft.Container(
+                    content=ft.Row([
+                        ft.Text(
+                            f"{value}",
+                            size=12,
+                            color=ft.Colors.GREY_700,
+                            text_align=ft.TextAlign.RIGHT
+                        ),
+                        # Grid line indicator
+                        ft.Container(
+                            width=3,
+                            height=1,
+                            bgcolor=ft.Colors.GREY_400,
+                            margin=ft.margin.only(left=2)
+                        )
+                    ], spacing=0),
+                    width=55,
+                    height=label_spacing if i < num_y_labels - 1 else 0,
+                    alignment=ft.alignment.bottom_right,
+                    padding=ft.padding.only(right=5)
+                )
+            )
+        
+        # Reverse the list so 0 is at bottom, scale_max at top
+        y_labels.reverse()
+        
+        y_axis_column = ft.Column(
+            controls=y_labels,
+            spacing=0,
+            alignment=ft.MainAxisAlignment.START,
+        )
+        
+        # Create bars with x-axis labels combined in single containers
+        bar_containers = []
+        
+        for i, row in status_counts.iterrows():
+            status_code = row['Status']
+            count = row['Count']
+            
+            # Color gradient from red (most frequent) to blue (least frequent)
+            color_intensity = i / max(1, len(status_counts) - 1)  # 0 to 1 based on position
+            hue = color_intensity * 300  # 0 to 300 degrees (red to purple, avoiding full circle)
+
+            # Convert HSV to RGB
+            import colorsys
+            r, g, b = colorsys.hsv_to_rgb(hue/360, 0.8, 0.9)  # Saturation=0.8, Value=0.9
+            r, g, b = int(r * 255), int(g * 255), int(b * 255)
+            color = f"#{r:02x}{g:02x}{b:02x}"
+                        
+            # Get status description for tooltip
+            if status_code in Alarm_status_map:
+                status_text = Alarm_status_map[status_code]
+            elif status_code in Normal_status_map:
+                status_text = Normal_status_map[status_code]
+            else:
+                status_text = f"Status {status_code}"
+            
+            # Calculate bar height based on the fixed scale
+            bar_height = max(5, (count / scale_max) * (chart_height - 40))
+            empty_space = chart_height - bar_height - 20  # Space above the bar
+            
+            # Create combined bar + x-axis label container
+            combined_container = ft.Container(
+                content=ft.Column([
+                    # Chart area part (bars grow from bottom)
+                    ft.Container(
+                        content=ft.Column([
+                            # Empty space at top
+                            ft.Container(
+                                height=empty_space,
+                                width=50,
+                            ),
+                            # Count label above bar
+                            ft.Container(
+                                content=ft.Text(
+                                    f"{count}",
+                                    size=10,
+                                    color=ft.Colors.BLACK,
+                                    weight=ft.FontWeight.BOLD,
+                                    text_align=ft.TextAlign.CENTER
+                                ),
+                                width=50,
+                                height=20,
+                                alignment=ft.alignment.center,
+                            ),
+                            # The bar itself (at bottom)
+                            ft.Container(
+                                width=50,
+                                height=bar_height,
+                                bgcolor=color,
+                                border_radius=ft.border_radius.only(top_left=3, top_right=3),
+                                border=ft.border.all(1, ft.Colors.GREY_400),
+                                tooltip=f"{status_text}\nCount: {count}",
+                            ),
+                        ],
+                        spacing=0,
+                        alignment=ft.MainAxisAlignment.START,
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                        height=chart_height,  # Fixed height for chart area
+                    ),
+                    # X-axis label part (FIXED - was missing!)
+                    ft.Container(
+                        content=ft.Text(
+                            f"{status_code}",
+                            size=11,
+                            color=ft.Colors.WHITE,
+                            weight=ft.FontWeight.BOLD,
+                            text_align=ft.TextAlign.CENTER
+                        ),
+                        width=50,
+                        height=25,
+                        alignment=ft.alignment.center,
+                        bgcolor=ft.Colors.BLUE_700,
+                        border_radius=ft.border_radius.all(3),
+                        margin=ft.margin.only(top=3)
+                    )
+                ],
+                spacing=0,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                width=60,  # Fixed width for consistent spacing
+                padding=ft.padding.symmetric(horizontal=3),
             )
             
-            # Update the UI
-            main_container.content = ft.Column([
-                filter_controls, 
-                task_gauge, 
-                charts_content
-            ], scroll=ft.ScrollMode.AUTO)
-            
-            page.update()
-        except Exception as e:
-            print(f"Error updating chart view: {e}")
-            # Show error message in UI
-            error_content = ft.Column([
-                filter_controls,
+            bar_containers.append(combined_container)
+        
+        # Scrollable container with bars and x-axis labels together
+        scrollable_chart_row = ft.Row(
+            controls=bar_containers,
+            spacing=3,
+            scroll=ft.ScrollMode.AUTO,
+            alignment=ft.MainAxisAlignment.START,
+        )
+        
+        # Charts area with background grid and combined bars+labels
+        charts_container = ft.Container(
+            content=ft.Stack([
+                # Background grid lines (horizontal lines at Y-axis label positions)
                 ft.Container(
-                    content=ft.Text(f"Error loading charts: {str(e)}", 
-                                    color=ft.Colors.RED_600, size=16),
-                    padding=20,
-                    alignment=ft.alignment.center
+                    content=ft.Column([
+                        ft.Container(
+                            height=1,
+                            bgcolor=ft.Colors.GREY_300,
+                            width=None,  # Full width
+                            margin=ft.margin.only(bottom=label_spacing - 1) if i < num_y_labels - 1 else ft.margin.all(0)
+                        ) for i in range(num_y_labels)
+                    ],
+                    spacing=0,
+                    ),
+                    height=chart_height,  # Grid only covers chart area, not labels
+                ),
+                # Combined bars and x-axis labels (scrollable together)
+                ft.Container(
+                    content=scrollable_chart_row,
+                    alignment=ft.alignment.top_left,
                 )
-            ])
-            main_container.content = error_content
-            page.update()
-    
-    threading.Thread(target=load_data_async).start()
-    return main_container
-
-def create_task_progress_gauge():
-    """Create a progress gauge showing task completion status"""
-    logs_stats, total = get_status_stats(state['df_logs'], state['line_logs'], state['selected_date'])
-    
-    if total == 0:
-        return ft.Container(
-            content=ft.Text("No data available for selected filters", size=14, color=ft.Colors.GREY_600),
-            height=100, alignment=ft.alignment.center,
-            bgcolor=ft.Colors.GREY_50, border_radius=8,
-            border=ft.border.all(1, ft.Colors.GREY_300)
+            ]),
+            height=chart_height + 60,  # Extra height for x-axis labels
+            padding=ft.padding.only(left=5, right=10, top=5, bottom=5),
+            border=ft.border.all(1, ft.Colors.GREY_400),
+            border_radius=ft.border_radius.all(5),
+            bgcolor=ft.Colors.WHITE,
         )
-    
-    complete_count = logs_stats[logs_stats["Status"] <= 100]["Count"].sum()
-    incomplete_count = logs_stats[logs_stats["Status"] > 100]["Count"].sum()
+        
+        # Main chart row (Y labels + Combined Charts with X-axis)
+        main_chart_row = ft.Row([
+            y_axis_column,
+            ft.Container(
+                content=charts_container,
+                expand=True,
+            )
+        ],
+        spacing=0,
+        alignment=ft.MainAxisAlignment.START,
+        )
+        
+        # Complete chart structure: Title > Main Chart Row (no separate x-axis row needed)
+        return ft.Column([
+            chart_title,
+            main_chart_row,
+        ],
+        spacing=5,
+        horizontal_alignment=ft.CrossAxisAlignment.START,
+        expand=True,
+        scroll=ft.ScrollMode.AUTO,
+        )
 
-    complete_percent = (complete_count / total) * 100 if total else 0
-    
-    header = ft.Row([
-        ft.Text(f"📊 Total Records: {total}", size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
-        ft.Text(f"✅ Normal: {complete_count} ({complete_percent:.1f}%)", size=14, color=ft.Colors.GREEN_700),
-        ft.Text(f"❌ Alarm: {incomplete_count} ({100-complete_percent:.1f}%)", size=14, color=ft.Colors.RED_700)
-    ], alignment=ft.MainAxisAlignment.CENTER, spacing=25)
-    
-    # Use ProgressBar with custom colors
-    progress_bar = ft.ProgressBar(
-        value=complete_percent / 100,  # Value between 0 and 1
-        bgcolor=ft.Colors.RED_400,     # Background color (red for alarms)
-        color=ft.Colors.GREEN_400,     # Progress color (green for working)
-        height=20,
-        border_radius=10,
+    chart_content = ft.Container(
+        content=ft.Column([
+            create_status_frequency_chart(),
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+        alignment=ft.alignment.center,
+        expand=True,
+        padding=20,
+        bgcolor=ft.Colors.WHITE,
+        border_radius=5,
+        border=ft.border.all(1, ft.Colors.ORANGE_200)
     )
-    
+
     return ft.Container(
-        content=ft.Column([header, progress_bar, ft.Container(height=6)], spacing=5),
-        alignment=ft.alignment.center, padding=10,
-        bgcolor=ft.Colors.WHITE, border_radius=5,
-        border=ft.border.all(1, ft.Colors.GREY_300)
+        content=ft.Column([
+            filter_controls,
+            chart_content
+        ]), 
+        padding=5,
+        expand=True
     )
-
-def process_chart_data():
-    """Process the ASRS log data for use in charts"""
-    df = state['df_logs']
-    if df is None or len(df) == 0:
-        return {}, {}
-    
-    # Apply filters based on current state
-    filtered_df = apply_filters(df, state['line_logs'], "All", state['selected_date'], "ASRS_Logs")
-    
-    # Prepare alarm data by line and status
-    alarm_data = {}
-    
-    # Count alarms by line
-    if 'LINE' in filtered_df.columns and 'Status' in filtered_df.columns:
-        # Convert LINE to string format
-        filtered_df['LINE_STR'] = filtered_df['LINE'].apply(
-            lambda x: f"{int(x):02d}" if isinstance(x, (int, float)) else str(x)
-        )
-        
-        # Count normal vs alarm states by line
-        line_status = {}
-        for line in range(1, 9):
-            line_str = f"{line:02d}"
-            line_df = filtered_df[filtered_df['LINE_STR'] == line_str]
-            
-            normal_count = len(line_df[line_df['Status'] < 100])
-            alarm_count = len(line_df[line_df['Status'] >= 100])
-            
-            line_status[f"SRM{line_str}"] = {
-                'normal': normal_count,
-                'alarm': alarm_count,
-                'total': normal_count + alarm_count
-            }
-        
-        alarm_data['line_status'] = line_status
-        
-        # Count by alarm type
-        alarm_counts = {}
-        alarm_df = filtered_df[filtered_df['Status'] >= 100]
-        
-        if len(alarm_df) > 0:
-            status_counts = alarm_df['Status'].value_counts().to_dict()
-            
-            for status, count in status_counts.items():
-                description = Alarm_status_map.get(status, "Unknown")
-                alarm_counts[status] = {
-                    'count': count,
-                    'description': description
-                }
-            
-            alarm_data['alarm_counts'] = alarm_counts
-    
-    # Prepare time series data
-    time_series_data = {}
-    
-    if 'TimeStamp' in filtered_df.columns and 'Status' in filtered_df.columns:
-        # Make sure TimeStamp is datetime
-        if not pd.api.types.is_datetime64_any_dtype(filtered_df['TimeStamp']):
-            filtered_df['TimeStamp'] = pd.to_datetime(filtered_df['TimeStamp'], errors='coerce')
-        
-        # Group by hour
-        filtered_df['hour'] = filtered_df['TimeStamp'].dt.floor('H')
-        
-        # Count events by hour and status type (normal vs alarm)
-        hourly_counts = filtered_df.groupby

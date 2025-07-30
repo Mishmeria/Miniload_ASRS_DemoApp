@@ -5,6 +5,7 @@ from src.local_database import load_data #for Cloud use src.database
 from views.asrs_logs_view import create_data_table_view as create_asrs_logs_view
 from views.statistics_view import create_statistics_view
 from views.login_view import create_login_view
+from views.chart_view import create_chart_view
 from src.ui_components import on_date_change
 import threading
 
@@ -33,36 +34,6 @@ def update_view(page, tab_name=None):
         )
     
     page.update()
-
-def create_chart_view(page):
-    # Placeholder for chart view - you can implement your actual chart here
-    filter_controls = ft.Row([
-        ft.Text("Chart View Coming Soon", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE)
-    ], alignment=ft.MainAxisAlignment.CENTER)
-    
-    # Example placeholder chart content
-    chart_content = ft.Container(
-        content=ft.Column([
-            ft.Text("ASRS Performance Charts", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_700),
-            ft.Container(height=20),
-            ft.Text("This tab will display performance charts and graphs", size=16),
-            ft.Container(height=30),
-            ft.Container(
-                content=ft.Icon(ft.Icons.BAR_CHART, size=100, color=ft.Colors.BLUE_300),
-                alignment=ft.alignment.center
-            ),
-            ft.Container(height=30),
-            ft.Text("Charts will be implemented in the next update", size=16, italic=True, color=ft.Colors.GREY_700),
-        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-        alignment=ft.alignment.center,
-        expand=True,
-        padding=50,
-        bgcolor=ft.Colors.WHITE,
-        border_radius=10,
-        border=ft.border.all(1, ft.Colors.BLUE_200)
-    )
-    
-    return ft.Column([filter_controls, chart_content], expand=True)
 
 def load_data_async(page):
     page.splash.visible = True
