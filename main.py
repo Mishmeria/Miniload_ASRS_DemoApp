@@ -1,7 +1,7 @@
 import flet as ft
 from datetime import datetime, timedelta
 from src.state import state
-from src.local_database import load_data #for Cloud use src.database
+from src.database import load_data #for Cloud use src.database for window pc use src.local_database
 from views.asrs_logs_view import create_data_table_view as create_asrs_logs_view
 from views.statistics_view import create_statistics_view
 from views.login_view import create_login_view
@@ -166,7 +166,7 @@ def on_route_change(route, page):
     page.update()
 
 def main(page: ft.Page):
-    page.title = "ASRS Database Viewer"
+    page.title = "ASRS Miniload Dashboard"
     page.theme_mode = ft.ThemeMode.LIGHT
     
     # Create loading indicator

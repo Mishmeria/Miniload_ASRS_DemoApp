@@ -48,8 +48,8 @@ class APIClient:
                 print(f"Response status: {response.status_code}")
                 print(f"Response URL: {response.url}")
 
-            response.raise_for_status()  # Raise an exception for bad status codes  # type: ignore
-            return response.json() # type: ignore
+                response.raise_for_status()  # Raise an exception for bad status codes
+                return response.json()
             
         except requests.exceptions.RequestException as e:
             print(f"API request failed: {e}")
@@ -64,17 +64,19 @@ class APIClient:
         return result is not None
     
     def fetch_logs(self, date_filter=None):
-        """Fetch logs data from API"""
+        """Fetch logs data from API with support for date ranges"""
         params = {}
         
         if date_filter:
-            params['start_date'] = date_filter['start_date']
-            params['end_date'] = date_filter['end_date']
+            if 'start_date' in date_filter:
+                params['start_date'] = date_filter['start_date']
+            if 'end_date' in date_filter:
+                params['end_date'] = date_filter['end_date']
         
         return self._make_request(API_CONFIG['endpoints']['logs'], params)
 
-def load_data():
-    """Load data via API instead of direct database connection"""
+def load_data(start_date=None, end_date=None):
+    """Load data via API with support for date ranges (matching local_database.py interface)"""
     client = APIClient()
     
     # Check API health first
@@ -82,9 +84,21 @@ def load_data():
         print("API is not accessible. Please check VPN connection and API server.")
         return False
     
-    # Prepare date filter if selected
+    # Prepare date filter based on parameters (matching local_database.py logic)
     date_filter = None
-    if 'selected_date' in state and state['selected_date'] is not None:
+    
+    if start_date is not None and end_date is not None:
+        # Date range provided as parameters
+        date_filter = {
+            'start_date': start_date.strftime('%Y-%m-%d'),
+            'end_date': end_date.strftime('%Y-%m-%d')
+        }
+        # Store the date range in state for other components to use
+        state['date_range'] = (start_date, end_date)
+        print(f"Loading data for date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        
+    elif 'selected_date' in state and state['selected_date'] is not None:
+        # Single date from state
         selected_date = state['selected_date']
         next_day = selected_date + timedelta(days=1)
         
@@ -92,6 +106,7 @@ def load_data():
             'start_date': selected_date.strftime('%Y-%m-%d'),
             'end_date': next_day.strftime('%Y-%m-%d')
         }
+        print(f"Loading data for selected date: {selected_date.strftime('%Y-%m-%d')}")
     
     # Fetch logs data
     logs_data = client.fetch_logs(date_filter)
@@ -100,40 +115,44 @@ def load_data():
         print("Failed to fetch logs data from API")
         return False
     
-    # Convert to DataFrame
+    # Convert to DataFrame and process (matching local_database.py processing)
     try:
-        # For see output .json
-        # print("Raw logs_data from API:")
-        # print(json.dumps(logs_data, indent=2))
         print(f"Received {len(logs_data) if logs_data else 0} log entries from API")
 
         df_logs = pd.DataFrame(logs_data or [])
-        
-        if "LINE" not in df_logs.columns:
-            df_logs["LINE"] = None
-        if "TimeStamp" not in df_logs.columns:
-            df_logs["TimeStamp"] = None
-        
-        # Preprocess data (same as before)
-        df_logs["LINE"] = df_logs["LINE"].astype(str)
-        mask = df_logs["LINE"].str.contains(r"LINE\d+-MP", na=False)
-
-        if mask.any():
-            df_logs.loc[mask, "LINE"] = df_logs.loc[mask, "LINE"].str.extract(r"LINE(\d+)-MP")
-
-        df_logs["LINE"] = pd.to_numeric(df_logs["LINE"], errors="coerce").astype("Int64")
-        df_logs['TimeStamp'] = pd.to_datetime(df_logs['TimeStamp'], errors="coerce")
         
         if df_logs.empty:
             print("No data returned from API")
             return False
         
+        # Ensure required columns exist (matching local_database.py structure)
+        required_columns = ['ASRS', 'BARCODE', 'CHKTYPE', 'MSGLOG', 'CDATE', 'MSGTYPE', 'PLCCODE']
+        for col in required_columns:
+            if col not in df_logs.columns:
+                df_logs[col] = None
+        
+        # Data type conversions (matching local_database.py)
+        if 'ASRS' in df_logs.columns:
+            df_logs['ASRS'] = pd.to_numeric(df_logs['ASRS'], errors='coerce').astype('Int64')
+        if 'PLCCODE' in df_logs.columns:
+            df_logs['PLCCODE'] = pd.to_numeric(df_logs['PLCCODE'], errors='coerce').astype('Int64')
+        
+        # Convert timestamp (API returns string, convert back to datetime)
+        if 'CDATE' in df_logs.columns:
+            df_logs['CDATE'] = pd.to_datetime(df_logs['CDATE'], errors="coerce")
+        
         # Store in state
         state['df_logs'] = df_logs
         
-        # Print info
-        date_info = f" for {state['selected_date'].strftime('%Y-%m-%d')}" if 'selected_date' in state and state['selected_date'] else ""
-        print(f"Data loaded via API{date_info} | Data Rows: {len(df_logs)}")
+        # Determine date info for logging (matching local_database.py)
+        if start_date is not None and end_date is not None:
+            date_info = f" for range {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+        elif 'selected_date' in state and state['selected_date']:
+            date_info = f" for {state['selected_date'].strftime('%Y-%m-%d')}"
+        else:
+            date_info = ""
+            
+        print(f"Data loaded via API{date_info}. Data Row: {len(df_logs)}")
 
         return True
         
@@ -164,7 +183,7 @@ def test_vpn_connectivity():
         import socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(5)
-        result = sock.connect_ex(('10.0.0.0', 8000))
+        result = sock.connect_ex(('10.0.0.2', 6969))  # Updated to match API server
         sock.close()
         return result == 0
     except:

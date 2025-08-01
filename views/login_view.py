@@ -3,8 +3,8 @@ from src.state import state
 
 def create_login_view(page):
     # Define username and password for simple authentication
-    username_value = ""
-    password_value = ""
+    username_value = "admin"
+    password_value = "1234"
     
     # Store these credentials in state for access in main.py
     state['valid_username'] = username_value
@@ -59,15 +59,10 @@ def create_login_view(page):
     login_box = ft.Container(
         content=ft.Column(
             [
-                ft.Text("ASRS Database Login", size=20, weight=ft.FontWeight.BOLD),
+                ft.Text("ASRS miniload Dashboard Login", size=20, weight=ft.FontWeight.BOLD),
                 username,
                 password,
-                login_button,
-                ft.Text(
-                    f"Demo: {username_value}/{password_value}",
-                    size=12,
-                    color=ft.Colors.GREY_600
-                )
+                login_button
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=20,
