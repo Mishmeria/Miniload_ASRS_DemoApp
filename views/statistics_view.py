@@ -30,8 +30,8 @@ def create_task_progress_gauge():
             border=ft.border.all(1, ft.Colors.GREY_300)
         )
     
-    complete_count = logs_stats[logs_stats["Status"] <= 100]["Count"].sum()
-    incomplete_count = logs_stats[logs_stats["Status"] > 100]["Count"].sum()
+    complete_count = logs_stats[logs_stats["PLCCODE"] <= 100]["Count"].sum()
+    incomplete_count = logs_stats[logs_stats["PLCCODE"] > 100]["Count"].sum()
 
     complete_percent = (complete_count / total) * 100 if total else 0
     
@@ -87,7 +87,7 @@ def create_statistics_view(page):
         if should_reload:
             try:
                 logs_stats, _ = get_status_stats(state['df_logs'], state['line_logs'], state['selected_date'])
-                logs_stats = logs_stats[logs_stats['Status'] > 100] if len(logs_stats) > 0 else logs_stats
+                logs_stats = logs_stats[logs_stats['PLCCODE'] > 100] if len(logs_stats) > 0 else logs_stats
                 alarm_df, before_alarm_df = process_alarm_data()
                 
                 stats_cache.update({
@@ -137,32 +137,32 @@ def process_alarm_data():
         return pd.DataFrame(), pd.DataFrame()
     
     filtered_df = apply_filters(df, state['line_logs'], "All", state['selected_date'], "ASRS_Logs")
-    alarm_df = filtered_df[filtered_df['Status'] > 100] if 'Status' in filtered_df.columns else pd.DataFrame()
+    alarm_df = filtered_df[filtered_df['PLCCODE'] > 100] if 'PLCCODE' in filtered_df.columns else pd.DataFrame()
     
     if len(alarm_df) == 0:
         return alarm_df, pd.DataFrame()
     
-    alarm_df = alarm_df.sort_values('TimeStamp', ascending=False)
+    alarm_df = alarm_df.sort_values('CDATE', ascending=False)
     before_alarm_rows = []
-    sorted_df = filtered_df.sort_values('TimeStamp')
+    sorted_df = filtered_df.sort_values('CDATE')
     
     for _, alarm_row in alarm_df.iterrows():
-        line_value = alarm_row['LINE']
-        alarm_time = alarm_row['TimeStamp']
+        line_value = alarm_row['ASRS']
+        alarm_time = alarm_row['CDATE']
         previous_rows = sorted_df[
-            (sorted_df['LINE'] == line_value) & 
-            (sorted_df['TimeStamp'] < alarm_time) &
-            (sorted_df['Status'] < 100)
+            (sorted_df['ASRS'] == line_value) & 
+            (sorted_df['CDATE'] < alarm_time) &
+            (sorted_df['PLCCODE'] < 100)
         ]
         
         if len(previous_rows) > 0:
             previous_row = previous_rows.iloc[-1]
             previous_row = previous_row.copy()
-            previous_row['Alarm'] = alarm_row['Status']
-            previous_row['AlarmTime'] = alarm_row['TimeStamp']
+            previous_row['Alarm'] = alarm_row['PLCCODE']
+            previous_row['AlarmTime'] = alarm_row['CDATE']
             
-            if isinstance(previous_row['TimeStamp'], pd.Timestamp) and isinstance(alarm_row['TimeStamp'], pd.Timestamp):
-                duration_seconds = (alarm_row['TimeStamp'] - previous_row['TimeStamp']).total_seconds()
+            if isinstance(previous_row['CDATE'], pd.Timestamp) and isinstance(alarm_row['CDATE'], pd.Timestamp):
+                duration_seconds = (alarm_row['CDATE'] - previous_row['CDATE']).total_seconds()
                 previous_row['Duration'] = f"{int(duration_seconds)}"
             else:
                 previous_row['Duration'] = "Unknown"
@@ -171,7 +171,7 @@ def process_alarm_data():
     
     if before_alarm_rows:
         before_alarm_df = pd.DataFrame(before_alarm_rows)
-        before_alarm_df = before_alarm_df.sort_values('TimeStamp', ascending=False)
+        before_alarm_df = before_alarm_df.sort_values('CDATE', ascending=False)
     else:
         before_alarm_df = pd.DataFrame()
     
@@ -212,7 +212,7 @@ def create_pre_alarm_table(before_alarm_df):
         display_df = before_alarm_df.copy()
         
         # Add missing columns with N/A values FIRST
-        for col in ['PalletID', 'PresentLevel', 'PresentBay']:
+        for col in ['BARCODE', 'Present_Level (D145)', 'Present_Bay_Arm1 (D140)']:
             if col not in display_df.columns:
                 display_df[col] = "N/A"
         
@@ -223,13 +223,13 @@ def create_pre_alarm_table(before_alarm_df):
             )
         
         # Add Description column for Status
-        if 'Status' in display_df.columns:
-            display_df['Description'] = display_df['Status'].astype(int).map(
+        if 'PLCCODE' in display_df.columns:
+            display_df['Description'] = display_df['PLCCODE'].astype(int).map(
                 lambda x: Normal_status_map.get(x, "ไม่ทราบสถานะ")
             )
         
         # Define the desired column order - EXPLICITLY include Duration
-        desired_cols = ['LINE', 'PalletID', 'PresentLevel', 'PresentBay', 'AlarmTime', 'Alarm', 'Detail', 'TimeStamp', 'Status', 'Description', 'Duration']
+        desired_cols = ['ASRS', 'BARCODE', 'Present_Level (D145)', 'Present_Bay_Arm1 (D140)', 'AlarmTime', 'Alarm', 'Detail', 'CDATE', 'PLCCODE', 'Description', 'Duration']
         
         # Only include columns that exist in the DataFrame
         available_cols = [col for col in desired_cols if col in display_df.columns]
@@ -239,26 +239,27 @@ def create_pre_alarm_table(before_alarm_df):
         
         # SOLUTION 1: Optimized column widths to fit better
         column_widths = {
-            'LINE': 60,
-            'PalletID': 80,
-            'PresentLevel': 60, 
-            'PresentBay': 60,   
+            'ASRS': 60,
+            'BARCODE': 80,
+            'Present_Level (D145)': 60, 
+            'Present_Bay_Arm1 (D140)': 60,   
             'AlarmTime': 120,    
             'Alarm': 70,
             'Detail': 220,       
-            'TimeStamp': 120,  
-            'Status': 70,
+            'CDATE': 120,  
+            'PLCCODE': 80,
             'Description': 220,  
             'Duration': 120      
         }
         
         # Column display names mapping
         column_display_names = {
-            'PresentLevel': 'Level',
-            'PresentBay': 'Bay',
+            'BARCODE': 'BARCODE',
+            'Present_Level (D145)': 'Level',
+            'Present_Bay_Arm1 (D140)': 'Bay',
             'Duration': 'Duration',  # Simplified name to save space
             'AlarmTime': 'เวลาที่เกิด Alarm',
-            'TimeStamp': 'เวลาของ Status ล่าสุดก่อนเกิด Alarm',
+            'CDATE': 'เวลาของ Status ล่าสุดก่อนเกิด Alarm',
             'Duration': 'ระยะเวลาก่อนเกิด Alarm (วินาที)' 
         }
         
@@ -330,7 +331,7 @@ def create_pre_alarm_table(before_alarm_df):
                 if col == 'Alarm':
                     text_color = ft.Colors.RED
                     text_weight = ft.FontWeight.BOLD
-                elif col == 'Status':
+                elif col == 'PLCCODE':
                     try:
                         status_val = int(value)
                         if status_val < 100:
@@ -417,14 +418,14 @@ def create_alarm_frequency_summary(alarm_df):
     line_counts = {line: 0 for line in all_lines}
     status_counts = {}
     
-    if 'LINE' in alarm_df.columns and 'Status' in alarm_df.columns:
-        alarm_df['LINE_STR'] = alarm_df['LINE'].apply(
+    if 'ASRS' in alarm_df.columns and 'PLCCODE' in alarm_df.columns:
+        alarm_df['LINE_STR'] = alarm_df['ASRS'].apply(
             lambda x: f"{int(x):02d}" if isinstance(x, (int, float)) else str(x)
         )
         
         # Count alarms by line
         for _, row in alarm_df.iterrows():
-            line, status = row['LINE_STR'], row['Status']
+            line, status = row['LINE_STR'], row['PLCCODE']
             if line in line_counts:
                 line_counts[line] += 1
             
@@ -545,7 +546,7 @@ def create_alarm_frequency_summary(alarm_df):
             width=60,
             height=40,
             alignment=ft.alignment.center,
-            content=ft.Text("Status", weight=ft.FontWeight.BOLD, size=14),
+            content=ft.Text("PLCCODE", weight=ft.FontWeight.BOLD, size=14),
             bgcolor=ft.Colors.BLUE_50,
             border=ft.border.all(1, ft.Colors.GREY_400)
         ),

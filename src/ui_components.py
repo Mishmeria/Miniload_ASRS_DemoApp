@@ -47,14 +47,14 @@ def get_unique_statuses(filter_type="All"):
     # Apply line filter but not status filter
     filtered_df = apply_filters(df, state['line_logs'], "All", None, "Logs")
     
-    if 'Status' in filtered_df.columns:
+    if 'PLCCODE' in filtered_df.columns:
         if filter_type == "Alarm":
             # Filter for status > 100 (alarm statuses)
-            alarm_statuses = filtered_df[filtered_df['Status'] > 100]['Status'].dropna().unique().tolist()
+            alarm_statuses = filtered_df[filtered_df['PLCCODE'] > 100]['PLCCODE'].dropna().unique().tolist()
             return ["All"] + sorted(alarm_statuses)
         else:
             # Get all statuses
-            statuses = filtered_df['Status'].dropna().unique().tolist()
+            statuses = filtered_df['PLCCODE'].dropna().unique().tolist()
             return ["All"] + sorted(statuses)
     else:
         return ["All"]
@@ -64,8 +64,8 @@ def filter_data_by_type(df, filter_type):
     if df is None or len(df) == 0:
         return df
     
-    if filter_type == "Alarm" and 'Status' in df.columns:
-        return df[df['Status'] > 100]
+    if filter_type == "Alarm" and 'PLCCODE' in df.columns:
+        return df[df['PLCCODE'] > 100]
     else:
         return df
     
@@ -123,7 +123,7 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
     if show_status:
         left_controls.append(
             create_dropdown(
-                "Status", 
+                'PLCCODE', 
                 status_filter, 
                 status_choices,
                 120, 
@@ -142,17 +142,7 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
                 bgcolor=ft.Colors.BLUE_100
             ),
         ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
-        
-        # Date display
-        ft.Container(
-            content=ft.Text(date_text, size=12, weight=ft.FontWeight.W_500, text_align=ft.TextAlign.CENTER),
-            padding=ft.padding.symmetric(horizontal=10, vertical=5),
-            bgcolor=ft.Colors.BLUE_50, 
-            border_radius=4,
-            alignment=ft.alignment.center
-        ),
-        
-        # Time range selection row
+            # Time range selection row
         ft.Row([
             create_dropdown(
                 "Start Time", 
@@ -180,7 +170,7 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
         # Time filter status display (optional)
         ft.Container(
             content=ft.Text(
-                f"Time Filter: {state['start_time']} - {state['end_time']}" if state.get('time_filter_active', False) else "Time Filter: OFF",
+                f" {date_text} Time Filter: {state['start_time']} - {state['end_time']}" if state.get('time_filter_active', False) else "Time Filter: OFF",
                 size=12, 
                 weight=ft.FontWeight.W_500, 
                 text_align=ft.TextAlign.CENTER

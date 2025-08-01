@@ -28,57 +28,33 @@ def build_data_table(df):
             pass
         return None
     
-    # Define column widths (adjust as needed)
     column_widths = {
-            'TimeStamp': 150,
-            'LINE': 60,
-            'PalletID': 80, 
-            'Duration': 80,
-            'PresentBay': 60,    
-            'Status': 70,
-            'Command': 70,  
-            'PresentBay': 60,
-            'PresentLevel': 60,
-            'DistanceX': 100,     
-            'DistanceY': 100,
-            'PresentBay': 60,
-            'AVG_X_Current': 100,
-            'AVG_Y_Current': 100,
-            'AVG_Z_Current': 100,
-            'Max_X_Current': 100,
-            'Max_Y_Current': 100,
-            'Max_Z_Current': 100,
-            'AVG_X_Frequency': 100,
-            'AVG_Y_Frequency': 100,
-            'AVG_Z_Frequency': 100,
-            'Max_X_Frequency': 100,
-            'Max_Y_Frequency': 100,
-            'Max_Z_Frequency': 100
+            'CDATE': 150,
+            'ASRS': 60,
+            'BARCODE': 90, 
+            'CHKTYPE': 90,
+            'MSGLOG': 250,
+            'MSGTYPE': 80,
+            'PLCCODE': 80,
+            'Command_X_Pos (D174)': 120,
+            'X_Distance_mm (D57)': 120,
+            'Start_Bank (D130)': 100,
+            'Start_Pos_mm (D131)': 120,
+            'Start_Level_mm (D133)': 120,
+            'End_Bank (D134)': 100,
+            'End_Position_mm (D135)': 120,
+            'End_Level_mm (D137)': 120,
+            'Pallet_ID (D138)': 100,
+            'Present_Bay_Arm1 (D140)': 120,
+            'Present_Level (D145)': 120,
+            'Status_Arm1 (D146)': 100,
+            'Status (D147)': 100,
+            'Command Machine (D148)': 130
         }
     
     header_display_names = {
-            'TimeStamp': 'TimeStamp',
-            'LINE': 'SRM LINE',
-            'PalletID': 'PalletID', 
-            'Duration': 'ระยะเวลา (ms)', 
-            'Status': 'Status',
-            'Command': 'CMD',  
-            'PresentBay': 'Bay',
-            'PresentLevel': 'Level',
-            'DistanceX': 'ระยะห่างแกน X (mm)',     
-            'DistanceY': 'ระยะห่างแกน Y (mm)',
-            'AVG_X_Current': 'กระแสเฉลี่ย X (mA)',
-            'AVG_Y_Current': 'กระแสเฉลี่ย Y (mA)',
-            'AVG_Z_Current': 'กระแสเฉลี่ย Z (mA)',
-            'Max_X_Current': 'กระแสสูงสุด X (mA)',
-            'Max_Y_Current': 'กระแสสูงสุด Y (mA)',
-            'Max_Z_Current': 'กระแสสูงสุด Z (mA)',
-            'AVG_X_Frequency': 'ความถี่เฉลี่ย X (Hz)',
-            'AVG_Y_Frequency': 'ความถี่เฉลี่ย Y (Hz)',
-            'AVG_Z_Frequency': 'ความถี่เฉลี่ย Z (Hz)',
-            'Max_X_Frequency': 'ความถี่สูงสุด X (Hz)',
-            'Max_Y_Frequency': 'ความถี่สูงสุด Y (Hz)',
-            'Max_Z_Frequency': 'ความถี่สูงสุด Z (Hz)'
+            'CDATE': 'CDATE',
+            'ASRS': 'SRM LINE'
         }
     
     # Create header cells with fixed widths and custom names
@@ -113,8 +89,8 @@ def build_data_table(df):
         
         # Get row color based on alarm category
         row_color = None
-        if 'Status' in row and row['Status'] > 100:
-            category_color = get_alarm_category_color(row['Status'])
+        if 'PLCCODE' in row and row['PLCCODE'] > 100:
+            category_color = get_alarm_category_color(row['PLCCODE'])
             if category_color:
                 row_color = category_color
         
@@ -129,13 +105,15 @@ def build_data_table(df):
                 cell_text = "NULL"
             elif isinstance(value, pd.Timestamp):
                 cell_text = value.strftime("%Y-%m-%d %H:%M:%S")
+            elif col == 'MSGLOG':
+                cell_text = str(value)
             else:
                 cell_text = str(value)[:50]
             
             # Add special styling for alarm status columns
             text_color = None
             text_weight = None
-            if col == 'Status' and not pd.isna(value) and int(value) > 100:
+            if col == 'PLCCODE' and not pd.isna(value) and int(value) > 100:
                 try:
                     status_code = int(value)
                     for category, codes in ALARM_CATEGORIES.items():
@@ -161,7 +139,7 @@ def build_data_table(df):
                     bgcolor=row_color,
                     border=ft.border.all(1, ft.Colors.GREY_300),
                     width=width,
-                    height=35
+                    height=60
                 )
             )
         

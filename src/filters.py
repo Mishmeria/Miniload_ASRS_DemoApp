@@ -6,40 +6,40 @@ def apply_filters(df, line_filter, status_filter, date_filter, table_type):
     filtered_df = df.copy()
     
     if line_filter != "All":
-        filtered_df = filtered_df[filtered_df['LINE'] == int(line_filter)]
+        filtered_df = filtered_df[filtered_df['ASRS'] == int(line_filter)]
     
     if status_filter and status_filter != "All":
         if table_type == "TaskLoops":
             if status_filter == "Complete":
-                filtered_df = filtered_df[filtered_df["Status"] == 1]
+                filtered_df = filtered_df[filtered_df["PLCCODE"] == 1]
             elif status_filter == "Incomplete":
-                filtered_df = filtered_df[filtered_df["Status"] == 0]
+                filtered_df = filtered_df[filtered_df["PLCCODE"] == 0]
         else:
             try:
                 status_value = float(status_filter)
-                filtered_df = filtered_df[filtered_df["Status"] == status_value]
+                filtered_df = filtered_df[filtered_df["PLCCODE"] == status_value]
             except ValueError:
                 # If status_filter is not a number, try to match it as a string
-                filtered_df = filtered_df[filtered_df["Status"].astype(str) == status_filter]
+                filtered_df = filtered_df[filtered_df["PLCCODE"].astype(str) == status_filter]
     
-    if state.get('time_filter_active', False) and 'TimeStamp' in filtered_df.columns:
+    if state.get('time_filter_active', False) and 'CDATE' in filtered_df.columns:
         start_time = state.get('start_time', "All")
         end_time = state.get('end_time', "All")
         
         if start_time != "All" and end_time != "All":
-            # Convert TimeStamp to datetime if it's not already
-            if not pd.api.types.is_datetime64_any_dtype(filtered_df['TimeStamp']):
-                filtered_df['TimeStamp'] = pd.to_datetime(filtered_df['TimeStamp'], errors='coerce')
+            # Convert CDATE to datetime if it's not already
+            if not pd.api.types.is_datetime64_any_dtype(filtered_df['CDATE']):
+                filtered_df['CDATE'] = pd.to_datetime(filtered_df['CDATE'], errors='coerce')
             
             # Extract time from datetime and filter
-            filtered_df['time_only'] = filtered_df['TimeStamp'].dt.strftime('%H:%M')
+            filtered_df['time_only'] = filtered_df['CDATE'].dt.strftime('%H:%M')
             
             # Convert start and end times to comparable format
             start_hour, start_minute = map(int, start_time.split(':'))
             end_hour, end_minute = map(int, end_time.split(':'))
             
-            # Extract hour from TimeStamp for comparison
-            filtered_df['hour'] = filtered_df['TimeStamp'].dt.hour
+            # Extract hour from CDATE for comparison
+            filtered_df['hour'] = filtered_df['CDATE'].dt.hour
             
             # Filter by time range
             # For cases where start_time < end_time (e.g., 08:00-19:00)
@@ -48,7 +48,7 @@ def apply_filters(df, line_filter, status_filter, date_filter, table_type):
             # Also include exact matches for the end hour (e.g., 19:00)
             # but only if the minute is 00 (since we're using whole hours)
             if end_minute == 0:
-                mask = mask | ((filtered_df['hour'] == end_hour) & (filtered_df['TimeStamp'].dt.minute == 0))
+                mask = mask | ((filtered_df['hour'] == end_hour) & (filtered_df['CDATE'].dt.minute == 0))
                 
             filtered_df = filtered_df[mask]
             
@@ -61,13 +61,13 @@ def get_status_stats(df, line_filter="All", selected_date=None):
     stats_df = df.copy()
     
     if line_filter and line_filter != "All":
-        stats_df = stats_df[stats_df['LINE'] == int(line_filter)]
+        stats_df = stats_df[stats_df['ASRS'] == int(line_filter)]
     
     if len(stats_df) == 0:
-        return pd.DataFrame(columns=['Status', 'Count', 'Percentage']), 0
+        return pd.DataFrame(columns=['PLCCODE', 'Count', 'Percentage']), 0
     
-    status_counts = stats_df['Status'].value_counts().reset_index()
-    status_counts.columns = ['Status', 'Count']
+    status_counts = stats_df['PLCCODE'].value_counts().reset_index()
+    status_counts.columns = ['PLCCODE', 'Count']
     total_count = status_counts['Count'].sum()
     status_counts['Percentage'] = (status_counts['Count'] / total_count * 100).round(2)
     
@@ -76,15 +76,15 @@ def get_status_stats(df, line_filter="All", selected_date=None):
 def calculate_line_alarm_frequency():
     df = state['df_logs']
     filtered_df = apply_filters(df, state['line_logs'], "All", state['selected_date'], "Logs")
-    alarm_df = filtered_df[filtered_df['Status'] > 100].copy()
+    alarm_df = filtered_df[filtered_df['PLCCODE'] > 100].copy()
     
     if len(alarm_df) == 0:
         return pd.DataFrame(columns=['LINE', 'Count'])
         
-    if alarm_df['LINE'].dtype == 'object':
-        alarm_df['LINE_NUM'] = alarm_df['LINE'].astype(str).str.extract(r'LINE(\d+)', expand=False).astype('Int64')
+    if alarm_df['ASRS'].dtype == 'object':
+        alarm_df['LINE_NUM'] = alarm_df['ASRS'].astype(str).str.extract(r'LINE(\d+)', expand=False).astype('Int64')
     else:
-        alarm_df['LINE_NUM'] = alarm_df['LINE'].astype('Int64')
+        alarm_df['LINE_NUM'] = alarm_df['ASRS'].astype('Int64')
         
     alarm_df = alarm_df.dropna(subset=['LINE_NUM'])
     

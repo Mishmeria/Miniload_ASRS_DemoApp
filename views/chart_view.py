@@ -34,8 +34,8 @@ def create_chart_view(page):
             return ft.Text("No data available to display", size=16, color=ft.Colors.GREY_700)
         
         # Count status occurrences
-        status_counts = filtered_df['Status'].value_counts().reset_index()
-        status_counts.columns = ['Status', 'Count']
+        status_counts = filtered_df['PLCCODE'].value_counts().reset_index()
+        status_counts.columns = ['PLCCODE', 'Count']
         status_counts = status_counts.sort_values('Count', ascending=False)
         
         max_count = status_counts['Count'].max()
@@ -114,7 +114,7 @@ def create_chart_view(page):
         bar_containers = []
         
         for i, row in status_counts.iterrows():
-            status_code = row['Status']
+            status_code = row['PLCCODE']
             count = row['Count']
             
             # Color gradient from red (most frequent) to blue (least frequent)
