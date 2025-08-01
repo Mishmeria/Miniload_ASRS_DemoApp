@@ -111,7 +111,7 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
     if show_status:
         left_controls.append(
             create_dropdown(
-                "Filter Type", 
+                "MSGTYPE", 
                 filter_choice, 
                 ["All", "Alarm"],
                 120, 
@@ -133,7 +133,7 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
     
     # Center section: Date and Time controls
     center_controls = ft.Column([
-        # Date selection row
+        # Single row with DatePicker, TimeStart, TimeEnd, and Apply button
         ft.Row([
             create_button(
                 "Select Date", 
@@ -141,9 +141,6 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
                 lambda e: page.open(page.date_picker), 
                 bgcolor=ft.Colors.BLUE_100
             ),
-        ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
-            # Time range selection row
-        ft.Row([
             create_dropdown(
                 "Start Time", 
                 state['start_time'], 
@@ -165,23 +162,25 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
                 bgcolor=ft.Colors.GREEN_100 if state.get('time_filter_active', False) else ft.Colors.GREY_300,
                 height=40
             ),
-        ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+        ], alignment=ft.MainAxisAlignment.CENTER, spacing=15),
         
-        # Time filter status display (optional)
+        # Status display showing selected date and time range
         ft.Container(
             content=ft.Text(
-                f" {date_text} Time Filter: {state['start_time']} - {state['end_time']}" if state.get('time_filter_active', False) else "Time Filter: OFF",
-                size=12, 
+                f"{date_text} in range {state['start_time']} to {state['end_time']}" if state.get('time_filter_active', False) else f"{date_text} - Time Filter: OFF",
+                size=14, 
                 weight=ft.FontWeight.W_500, 
-                text_align=ft.TextAlign.CENTER
+                text_align=ft.TextAlign.CENTER,
+                color=ft.Colors.BLUE_700 if state.get('time_filter_active', False) else ft.Colors.GREY_700
             ),
-            padding=ft.padding.symmetric(horizontal=10, vertical=5),
+            padding=ft.padding.symmetric(horizontal=15, vertical=8),
             bgcolor=ft.Colors.GREEN_50 if state.get('time_filter_active', False) else ft.Colors.GREY_100, 
-            border_radius=4,
+            border_radius=6,
             alignment=ft.alignment.center,
-            visible=state['start_time'] != "All" or state['end_time'] != "All" or state.get('time_filter_active', False)
+            border=ft.border.all(1, ft.Colors.GREEN_300 if state.get('time_filter_active', False) else ft.Colors.GREY_300),
+            visible=True  # Always show the status
         )
-    ], spacing=5, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+    ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
     
     # Right section: Refresh button
     right_controls = []

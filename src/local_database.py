@@ -53,21 +53,30 @@ def parse_monitor_data(monitor_data):
     
     return d_values
 
-def load_data():
+def load_data(start_date=None, end_date=None):
     try:
         engine = create_engine(get_connection_string())
         
-        date_filter = ""
-        
-        if 'selected_date' in state and state['selected_date'] is not None:
+        # Determine date filter based on parameters
+        if start_date is not None and end_date is not None:
+            # Format dates for SQL query
+            start_date_str = start_date.strftime('%Y-%m-%d')
+            end_date_str = end_date.strftime('%Y-%m-%d')
+            logs_date_filter = f"WHERE [CDATE] >= '{start_date_str}' AND [CDATE] <= '{end_date_str}'"
+            
+            # Store the date range in state for other components to use
+            state['date_range'] = (start_date, end_date)
+            print(f"Loading data for date range: {start_date_str} to {end_date_str}")
+            
+        elif 'selected_date' in state and state['selected_date'] is not None:
             selected_date = state['selected_date']
             next_day = selected_date + timedelta(days=1)
             
             # Format dates for SQL query
-            start_date = selected_date.strftime('%Y-%m-%d')
-            end_date = next_day.strftime('%Y-%m-%d')
+            start_date_str = selected_date.strftime('%Y-%m-%d')
+            end_date_str = next_day.strftime('%Y-%m-%d')
             
-            logs_date_filter = f"WHERE [CDATE] >= '{start_date}' AND [CDATE] < '{end_date}'"
+            logs_date_filter = f"WHERE [CDATE] >= '{start_date_str}' AND [CDATE] < '{end_date_str}'"
         else:
             logs_date_filter = ""
         
@@ -96,8 +105,15 @@ def load_data():
         
         state['df_logs'] = df_logs
         
-        date_info = f" for {state['selected_date'].strftime('%Y-%m-%d')}" if 'selected_date' in state and state['selected_date'] else ""
-        print(f"Data loaded{date_info} Data Row: {len(df_logs)}")
+        # Determine date info for logging
+        if start_date is not None and end_date is not None:
+            date_info = f" for range {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+        elif 'selected_date' in state and state['selected_date']:
+            date_info = f" for {state['selected_date'].strftime('%Y-%m-%d')}"
+        else:
+            date_info = ""
+            
+        print(f"Data loaded{date_info}. Data Row: {len(df_logs)}")
         
         return True
     except Exception as e:

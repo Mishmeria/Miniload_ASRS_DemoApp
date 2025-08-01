@@ -5,629 +5,456 @@ import time
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+from datetime import datetime, timedelta
 from src.state import state
 from src.filters import get_status_stats, apply_filters
-from src.ui_components import create_filter_controls # type: ignore
+from src.ui_components import create_filter_controls
+from src.local_database import load_data
+from views.Status_Detail import Alarm_status_map
 
-from views.Status_Detail import Alarm_status_map, Normal_status_map , ALARM_CATEGORIES , CATEGORY_COLORS
-
-# Alarm categories
-table_height = 500
-cells_width = 180
-else_width = 70
-
-stats_cache = {'logs_stats': None, 'alarm_df': None, 'before_alarm_df': None, 'filter_state': None}
-
-def create_task_progress_gauge():
-    logs_stats, total = get_status_stats(state['df_logs'], state['line_logs'], state['selected_date'])
-    
-    if total == 0:
-        return ft.Container(
-            content=ft.Text("No TaskLogs data available", size=14, color=ft.Colors.GREY_600),
-            height=100, alignment=ft.alignment.center,
-            bgcolor=ft.Colors.GREY_50, border_radius=8,
-            border=ft.border.all(1, ft.Colors.GREY_300)
-        )
-    
-    complete_count = logs_stats[logs_stats["PLCCODE"] <= 100]["Count"].sum()
-    incomplete_count = logs_stats[logs_stats["PLCCODE"] > 100]["Count"].sum()
-
-    complete_percent = (complete_count / total) * 100 if total else 0
-    
-    header = ft.Row([
-        ft.Text(f"Logs ทั้งหมด : {total} records", size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
-        ft.Text(f"Status ปกติ : {complete_count} ครั้ง (คิดเป็น {complete_percent:.1f}% ของวัน)", size=14, color=ft.Colors.GREEN_700),
-        ft.Text(f"เกิด Alarm : {incomplete_count} ครั้ง (คิดเป็น {100-complete_percent:.1f}% ของวัน)", size=14, color=ft.Colors.RED_700)
-    ], alignment=ft.MainAxisAlignment.CENTER, spacing=25)
-    
-    # Use ProgressBar with custom colors
-    progress_bar = ft.ProgressBar(
-        value=complete_percent / 100,  # Value between 0 and 1
-        bgcolor=ft.Colors.RED_400,     # Background color (red for alarms)
-        color=ft.Colors.GREEN_400,     # Progress color (green for working)
-        height=20,
-        border_radius=10,
-    )
-    
-    return ft.Container(
-        content=ft.Column([header, progress_bar, ft.Container(height=6)], spacing=5),
-        alignment=ft.alignment.center, padding=10,
-        bgcolor=ft.Colors.WHITE, border_radius=5,
-        border=ft.border.all(1, ft.Colors.GREY_300)
-    )
+# Define ASRS line options
+asrs_options = [
+    ft.dropdown.Option(key="0", text="All Lines"),
+] + [
+    ft.dropdown.Option(key=str(i), text=f"SRM{i:02d}") 
+    for i in range(1, 9)
+]
 
 def create_statistics_view(page):
-    filter_controls = create_filter_controls(page=page, table_type=None, show_status=False, show_refresh=True)
-    loading_view = ft.Column([
-        ft.Container(
-            content=ft.Column([
-                ft.ProgressRing(width=50, height=50),
-                ft.Text("Loading statistics...", size=16)
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-            alignment=ft.alignment.center, expand=True
-        )
-    ])
-    
-    main_container = ft.Container(
-        content=ft.Column([filter_controls, loading_view], scroll=ft.ScrollMode.AUTO),
-        padding=15, expand=True
+    # Default date range: last 7 days to today
+    default_end_date = datetime.now()
+    default_start_date = default_end_date - timedelta(days=7)
+
+    # Create text fields for displaying selected dates
+    start_date_field = ft.TextField(
+        label="ตั้งแต่วันที่",
+        value=default_start_date.strftime("%Y-%m-%d"),
+        read_only=True,
+        expand=1,
     )
     
-    def load_data_async():
-        time.sleep(0.1)
-        # Create a simple tuple for comparison
-        current_filter_state = (str(state['line_logs']), state['selected_date'].strftime("%Y-%m-%d") if hasattr(state['selected_date'], 'strftime') else str(state['selected_date']))
+    end_date_field = ft.TextField(
+        label="ถึงวันที่",
+        value=default_end_date.strftime("%Y-%m-%d"),
+        read_only=True,
+        expand=1,
+    )
+
+    # Store selected dates in variables accessible to all functions
+    selected_start_date = default_start_date
+    selected_end_date = default_end_date
+    
+    # Create date pickers
+    start_date_picker = ft.DatePicker(
+        first_date=datetime(2023, 1, 1),
+        last_date=datetime(2026, 12, 31),
+        current_date=default_start_date.date(),
+    )
+    
+    end_date_picker = ft.DatePicker(
+        first_date=datetime(2023, 1, 1),
+        last_date=datetime(2026, 12, 31),
+        current_date=default_end_date.date(),
+    )
+
+    # Add date pickers to page overlay
+    page.overlay.append(start_date_picker)
+    page.overlay.append(end_date_picker)
+    
+    # Date change handlers
+    def on_start_date_change(e):
+        nonlocal selected_start_date
+        if e.control.value:
+            date_obj = datetime.combine(e.control.value, datetime.min.time())
+            selected_start_date = date_obj
+            start_date_field.value = date_obj.strftime("%Y-%m-%d")
+            page.update()
+    
+    def on_end_date_change(e):
+        nonlocal selected_end_date
+        if e.control.value:
+            date_obj = datetime.combine(e.control.value, datetime.max.time())
+            selected_end_date = date_obj
+            end_date_field.value = date_obj.strftime("%Y-%m-%d")
+            page.update()
+    
+    start_date_picker.on_change = on_start_date_change
+    end_date_picker.on_change = on_end_date_change
+
+    # Calendar buttons
+    start_date_button = ft.IconButton(
+        icon=ft.Icons.CALENDAR_TODAY,
+        tooltip="Select start date",
+        on_click=lambda _: (setattr(start_date_picker, 'open', True), page.update()),
+    )
+    
+    end_date_button = ft.IconButton(
+        icon=ft.Icons.CALENDAR_TODAY,
+        tooltip="Select end date",
+        on_click=lambda _: (setattr(end_date_picker, 'open', True), page.update()),
+    )
+
+    # ASRS line selection dropdown
+    asrs_dropdown = ft.Dropdown(
+        label="ASRS Line",
+        hint_text="Select ASRS line to analyze",
+        options=asrs_options,
+        value="0",  # Default to "All Lines"
+        expand=1,
+    )
+
+    # Status indicators
+    status_text = ft.Text(
+        "กรุณาเลือกช่วงวันที่และ ASRS Line แล้วกดปุ่ม 'ค้นหาข้อมูล'",
+        color=ft.Colors.BLUE_GREY_700
+    )
+    progress_bar = ft.ProgressBar(visible=False)
+    
+    # Results containers for two tables
+    results_container = ft.Container(
+        content=ft.Text("ผลลัพธ์จะแสดงที่นี่หลังจากค้นหาข้อมูล", 
+                        text_align=ft.TextAlign.CENTER,
+                        color=ft.Colors.GREY_600),
+        bgcolor=ft.Colors.WHITE,
+        border_radius=10,
+        padding=20,
+        expand=True,
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_200),
+    )
+
+    line_stats_container = ft.Container(
+        content=ft.Text("สถิติรายไลน์จะแสดงที่นี่",
+                        text_align=ft.TextAlign.CENTER,
+                        color=ft.Colors.GREY_600),
+        bgcolor=ft.Colors.WHITE,
+        border_radius=10,
+        padding=20,
+        expand=True,
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_200),
+    )
+    
+    # Function to run query and update UI
+    def run_query(e):
+        nonlocal selected_start_date, selected_end_date
         
-        # Safe comparison - check if filter state has changed or if cache is empty
-        should_reload = (stats_cache['filter_state'] is None or 
-                         stats_cache['filter_state'] != current_filter_state or 
-                         stats_cache['logs_stats'] is None)
+        # Validate date range
+        if selected_end_date < selected_start_date:
+            page.snack_bar = ft.SnackBar(
+                content=ft.Text("วันที่สิ้นสุดต้องมาหลังวันที่เริ่มต้น"),
+                action="OK"
+            )
+            page.snack_bar.open = True
+            page.update()
+            return
+            
+        # Show loading state
+        progress_bar.visible = True
+        status_text.value = "กำลังโหลดข้อมูล กรุณารอสักครู่..."
+        status_text.color = ft.Colors.BLUE_700
+        page.update()
         
-        if should_reload:
+        # Function to run in background thread
+        def load_data_thread():
             try:
-                logs_stats, _ = get_status_stats(state['df_logs'], state['line_logs'], state['selected_date'])
-                logs_stats = logs_stats[logs_stats['PLCCODE'] > 100] if len(logs_stats) > 0 else logs_stats
-                alarm_df, before_alarm_df = process_alarm_data()
+                # Get selected ASRS line
+                selected_line = None if asrs_dropdown.value == "0" else asrs_dropdown.value
                 
-                stats_cache.update({
-                    'logs_stats': logs_stats,
-                    'alarm_df': alarm_df,
-                    'before_alarm_df': before_alarm_df,
-                    'filter_state': current_filter_state
-                }) # type: ignore
+                # Call load_data with date range
+                success = load_data(start_date=selected_start_date, end_date=selected_end_date)
+                
+                if not success:
+                    status_text.value = "ไม่สามารถโหลดข้อมูลได้ กรุณาตรวจสอบการเชื่อมต่อและลองอีกครั้ง"
+                    status_text.color = ft.Colors.RED_600
+                    progress_bar.visible = False
+                    page.update()
+                    return
+                
+                # Process data for statistics
+                df = state.get('df_logs')
+                
+                if df is None or len(df) == 0:
+                    # No data found
+                    page.snack_bar = ft.SnackBar(
+                        content=ft.Text("ไม่พบข้อมูลในช่วงวันที่ที่เลือก"),
+                        action="OK"
+                    )
+                    page.snack_bar.open = True
+                    status_text.value = "ไม่พบข้อมูล กรุณาลองเลือกช่วงวันที่อื่น"
+                    status_text.color = ft.Colors.RED_600
+                    progress_bar.visible = False
+                    page.update()
+                    return
+                
+                # --- Main Alarm Table (Left Side) ---
+                df_to_process = df.copy()
+                if selected_line and selected_line != "0":
+                    df_to_process = df[df['ASRS'] == int(selected_line)]
+
+                if len(df_to_process) == 0:
+                    status_text.value = f"ไม่พบข้อมูลสำหรับ SRM{selected_line} ในช่วงวันที่ที่เลือก"
+                    status_text.color = ft.Colors.ORANGE_600
+                    results_container.content = ft.Text(f"ไม่พบข้อมูลสำหรับ SRM{selected_line}")
+                else:
+                    if 'PLCCODE' in df_to_process.columns:
+                        alarm_df = df_to_process[df_to_process['PLCCODE'] > 100]
+                        if len(alarm_df) > 0:
+                            plc_counts = alarm_df['PLCCODE'].value_counts().reset_index()
+                            plc_counts.columns = ['PLCCODE', 'Count']
+                            plc_counts = plc_counts.sort_values('Count', ascending=False)
+                            
+                            selected_line_text = "All Lines"
+                            if selected_line and selected_line != "0":
+                                for option in asrs_options:
+                                    if option.key == selected_line:
+                                        selected_line_text = option.text
+                                        break
+                            
+                            date_header = create_date_header(selected_start_date, selected_end_date, selected_line_text, len(alarm_df))
+                            alarm_table = create_alarm_table(plc_counts)
+                            results_container.content = ft.Column([date_header, ft.Container(content=alarm_table, expand=True)], scroll=ft.ScrollMode.AUTO, expand=True)
+                        else:
+                            results_container.content = ft.Text("ไม่พบข้อมูล Alarm ในช่วงวันที่ที่เลือก")
+                
+                # --- Per-Line Summary Table (Right Side) ---
+                line_summary_df = df[df['PLCCODE'] > 100].groupby('ASRS').size().reset_index(name='Count')
+                line_summary_df = line_summary_df.sort_values('Count', ascending=False)
+                
+                if not line_summary_df.empty:
+                    line_summary_table = create_line_summary_table(line_summary_df)
+                    line_stats_container.content = ft.Column([
+                        ft.Text("สรุปจำนวน Alarm แต่ละไลน์", size=16, weight=ft.FontWeight.BOLD),
+                        ft.Divider(),
+                        ft.Container(content=line_summary_table, expand=True)
+                    ], scroll=ft.ScrollMode.AUTO, expand=True)
+                else:
+                    line_stats_container.content = ft.Text("ไม่พบข้อมูล Alarm เพื่อสรุป")
+
+                # Update status
+                print_total_alarms = len(df_to_process[df_to_process['PLCCODE'] > 100])
+                status_text.value = f"โหลดข้อมูลสำเร็จ พบข้อมูล {len(df)} มี Alarm ทั้งหมด {print_total_alarms} รายการในช่วงเวลาที่เลือก"
+                status_text.color = ft.Colors.GREEN_700
+                
             except Exception as e:
-                print(f"Error loading statistics data: {e}")
-                # Fallback to empty DataFrames if there's an error
-                stats_cache.update({
-                    'logs_stats': pd.DataFrame(),
-                    'alarm_df': pd.DataFrame(),
-                    'before_alarm_df': pd.DataFrame(),
-                    'filter_state': current_filter_state
-                }) # type: ignore
-        
-        try:
-            task_gauge = create_task_progress_gauge()
-            main_content = create_main_layout(stats_cache['alarm_df'], stats_cache['before_alarm_df'])
-            
-            main_container.content = ft.Column([filter_controls, task_gauge, main_content])
-            page.update()
-        except Exception as e:
-            print(f"Error updating statistics view: {e}")
-            # Show error message in UI
-            error_content = ft.Column([
-                filter_controls,
-                ft.Container(
-                    content=ft.Text(f"Error loading statistics: {str(e)}", 
-                                    color=ft.Colors.RED_600, size=16),
-                    padding=20,
-                    alignment=ft.alignment.center
+                print(f"Error loading data: {e}")
+                status_text.value = f"เกิดข้อผิดพลาด: {str(e)}"
+                status_text.color = ft.Colors.RED_600
+                
+                # Show error in snackbar
+                page.snack_bar = ft.SnackBar(
+                    content=ft.Text(f"เกิดข้อผิดพลาด: {str(e)}"),
+                    action="OK"
                 )
-            ])
-            main_container.content = error_content
+                page.snack_bar.open = True
+            
+            # Hide progress bar
+            progress_bar.visible = False
             page.update()
-    
-    threading.Thread(target=load_data_async).start()
-    return main_container
-
-# Rest of the file remains unchanged
-def process_alarm_data():
-    df = state['df_logs']
-    if df is None or len(df) == 0:
-        return pd.DataFrame(), pd.DataFrame()
-    
-    filtered_df = apply_filters(df, state['line_logs'], "All", state['selected_date'], "ASRS_Logs")
-    alarm_df = filtered_df[filtered_df['PLCCODE'] > 100] if 'PLCCODE' in filtered_df.columns else pd.DataFrame()
-    
-    if len(alarm_df) == 0:
-        return alarm_df, pd.DataFrame()
-    
-    alarm_df = alarm_df.sort_values('CDATE', ascending=False)
-    before_alarm_rows = []
-    sorted_df = filtered_df.sort_values('CDATE')
-    
-    for _, alarm_row in alarm_df.iterrows():
-        line_value = alarm_row['ASRS']
-        alarm_time = alarm_row['CDATE']
-        previous_rows = sorted_df[
-            (sorted_df['ASRS'] == line_value) & 
-            (sorted_df['CDATE'] < alarm_time) &
-            (sorted_df['PLCCODE'] < 100)
-        ]
         
-        if len(previous_rows) > 0:
-            previous_row = previous_rows.iloc[-1]
-            previous_row = previous_row.copy()
-            previous_row['Alarm'] = alarm_row['PLCCODE']
-            previous_row['AlarmTime'] = alarm_row['CDATE']
-            
-            if isinstance(previous_row['CDATE'], pd.Timestamp) and isinstance(alarm_row['CDATE'], pd.Timestamp):
-                duration_seconds = (alarm_row['CDATE'] - previous_row['CDATE']).total_seconds()
-                previous_row['Duration'] = f"{int(duration_seconds)}"
-            else:
-                previous_row['Duration'] = "Unknown"
-            
-            before_alarm_rows.append(previous_row)
+        # Start background thread
+        threading.Thread(target=load_data_thread).start()
     
-    if before_alarm_rows:
-        before_alarm_df = pd.DataFrame(before_alarm_rows)
-        before_alarm_df = before_alarm_df.sort_values('CDATE', ascending=False)
-    else:
-        before_alarm_df = pd.DataFrame()
-    
-    return alarm_df, before_alarm_df
-
-def create_main_layout(alarm_df, before_alarm_df):
-    return ft.Container(
-        content=ft.Row([
-            ft.Container(content=create_pre_alarm_table(before_alarm_df), expand=15),
-            ft.Container(content=create_alarm_frequency_table(alarm_df), expand=5)
-        ], spacing=15),
-        margin=ft.margin.only(top=10, bottom=15)
+    # Query button
+    query_button = ft.ElevatedButton(
+        text="ค้นหาข้อมูล", 
+        icon=ft.Icons.SEARCH,
+        on_click=run_query,
+        style=ft.ButtonStyle(
+            color=ft.Colors.WHITE,
+            bgcolor=ft.Colors.BLUE,
+        )
     )
-
-def create_container_with_header(title, content, height):
-    return ft.Container(
+    
+    # Create the main layout
+    date_controls = ft.Row([
+        ft.Container(
+            content=ft.Row([start_date_field, start_date_button]),
+            expand=1,
+        ),
+        ft.Container(
+            content=ft.Row([end_date_field, end_date_button]),
+            expand=1,
+        ),
+        ft.Container(
+            content=asrs_dropdown,
+            expand=1,
+        ),
+        query_button,
+    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+    
+    # Main container
+    main_container = ft.Container(
         content=ft.Column([
             ft.Container(
-                content=ft.Text(title, size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_700),
-                padding=10, bgcolor=ft.Colors.BLUE_100,
-                border_radius=ft.border_radius.only(top_left=8, top_right=8)
+                content=ft.Text("สถิติการเกิด Alarm", size=24, weight=ft.FontWeight.BOLD),
+                margin=ft.margin.only(bottom=10),
             ),
-            ft.Container(
-                content=content, padding=10, expand=True, bgcolor=ft.Colors.WHITE,
-                border_radius=ft.border_radius.only(bottom_left=8, bottom_right=8)
-            )
-        ], spacing=0, tight=True),
-        height=height, expand=True, border_radius=10, bgcolor=ft.Colors.BLUE_50,
-        border=ft.border.all(1, ft.Colors.BLUE_200),
-        shadow=ft.BoxShadow(spread_radius=1, blur_radius=5, color=ft.Colors.with_opacity(0.3, ft.Colors.GREY_800), offset=ft.Offset(0, 2))
+            date_controls,
+            ft.Container(height=10),  # Spacer
+            status_text,
+            progress_bar,
+            ft.Container(height=10),  # Spacer
+            ft.Row([
+                results_container,
+                line_stats_container
+            ], expand=True)
+        ], expand=True),
+        padding=20,
+        expand=True,
+    )
+    
+    return main_container
+
+def create_date_header(start_date, end_date, line_text, total_alarms):
+    return ft.Container(
+        content=ft.Column([
+            ft.Text(
+                f"ข้อมูลช่วงวันที่: {start_date.strftime('%Y-%m-%d')} ถึง {end_date.strftime('%Y-%m-%d')}", 
+                weight=ft.FontWeight.BOLD, 
+                size=16
+            ),
+        ]),
+        padding=10,
+        margin=ft.margin.only(bottom=10),
     )
 
-def create_pre_alarm_table(before_alarm_df):
-    if len(before_alarm_df) == 0:
-        content = ft.Text("No Pre-Alarm Data Found", text_align=ft.TextAlign.CENTER, size=16, color=ft.Colors.BLUE_300)
-    else:
-        # Make a copy to avoid modifying the original DataFrame
-        display_df = before_alarm_df.copy()
-        
-        # Add missing columns with N/A values FIRST
-        for col in ['BARCODE', 'Present_Level (D145)', 'Present_Bay_Arm1 (D140)']:
-            if col not in display_df.columns:
-                display_df[col] = "N/A"
-        
-        # Add Detail column for Alarm status
-        if 'Alarm' in display_df.columns:
-            display_df['Detail'] = display_df['Alarm'].astype(int).map(
-                lambda x: Alarm_status_map.get(x, "ไม่ทราบสถานะ")
-            )
-        
-        # Add Description column for Status
-        if 'PLCCODE' in display_df.columns:
-            display_df['Description'] = display_df['PLCCODE'].astype(int).map(
-                lambda x: Normal_status_map.get(x, "ไม่ทราบสถานะ")
-            )
-        
-        # Define the desired column order - EXPLICITLY include Duration
-        desired_cols = ['ASRS', 'BARCODE', 'Present_Level (D145)', 'Present_Bay_Arm1 (D140)', 'AlarmTime', 'Alarm', 'Detail', 'CDATE', 'PLCCODE', 'Description', 'Duration']
-        
-        # Only include columns that exist in the DataFrame
-        available_cols = [col for col in desired_cols if col in display_df.columns]
-        
-        # Select only the available columns in the desired order
-        display_df = display_df[available_cols]
-        
-        # SOLUTION 1: Optimized column widths to fit better
-        column_widths = {
-            'ASRS': 60,
-            'BARCODE': 80,
-            'Present_Level (D145)': 60, 
-            'Present_Bay_Arm1 (D140)': 60,   
-            'AlarmTime': 120,    
-            'Alarm': 70,
-            'Detail': 220,       
-            'CDATE': 120,  
-            'PLCCODE': 80,
-            'Description': 220,  
-            'Duration': 120      
-        }
-        
-        # Column display names mapping
-        column_display_names = {
-            'BARCODE': 'BARCODE',
-            'Present_Level (D145)': 'Level',
-            'Present_Bay_Arm1 (D140)': 'Bay',
-            'Duration': 'Duration',  # Simplified name to save space
-            'AlarmTime': 'เวลาที่เกิด Alarm',
-            'CDATE': 'เวลาของ Status ล่าสุดก่อนเกิด Alarm',
-            'Duration': 'ระยะเวลาก่อนเกิด Alarm (วินาที)' 
-        }
-        
-        # Create header cells with optimized widths
-        header_cells = []
-        for col in display_df.columns:
-            display_name = column_display_names.get(col, col)
-            width = column_widths.get(col, 80)
-            
-            header_cells.append(
-                ft.Container(
-                    content=ft.Text(
-                        display_name, 
-                        weight=ft.FontWeight.BOLD, 
-                        size=13,  # Slightly smaller font
-                        text_align=ft.TextAlign.CENTER
-                    ),
-                    padding=6,  # Reduced padding
-                    alignment=ft.alignment.center,
-                    bgcolor=ft.Colors.GREY_100,
-                    border=ft.border.all(1, ft.Colors.GREY_400),
-                    width=width,
-                    height=80  # Reduced height
-                )
-            )
-        
-        header_row = ft.Row(header_cells, spacing=0)
-        
-        # Create data rows with optimized widths
-        data_rows = []
-        for idx, (_, row_data) in enumerate(display_df.iterrows()):
-            row_cells = []
-            
-            # Determine row background color
-            row_color = ft.Colors.with_opacity(0.05, ft.Colors.GREY_800) if idx % 2 == 0 else ft.Colors.WHITE
-            
-            # Special color for alarm rows
-            if 'Alarm' in row_data:
-                try:
-                    alarm_status = int(row_data['Alarm'])
-                    for category, codes in ALARM_CATEGORIES.items():
-                        if alarm_status in codes:
-                            row_color = ft.Colors.with_opacity(0.3, CATEGORY_COLORS[category])
-                            break
-                except:
-                    pass
-            
-            for col in display_df.columns:
-                value = row_data[col]
-                width = column_widths.get(col, 80)
-                
-                # Format the value with truncation for long text
-                if pd.isna(value):
-                    cell_text = "NULL"
-                elif isinstance(value, pd.Timestamp):
-                    # Shorter timestamp format
-                    cell_text = value.strftime("%m-%d %H:%M:%S")
-                # elif col in ['Detail', 'Description'] and len(str(value)) > 20:
-                #     # Truncate long descriptions
-                #     cell_text = str(value)[:36] + "..."
-                else:
-                    cell_text = str(value)
-                
-                # Determine text color and weight
-                text_color = None
-                text_weight = None
-                font_size = 12  # Smaller font for data
-                
-                if col == 'Alarm':
-                    text_color = ft.Colors.RED
-                    text_weight = ft.FontWeight.BOLD
-                elif col == 'PLCCODE':
-                    try:
-                        status_val = int(value)
-                        if status_val < 100:
-                            text_color = ft.Colors.GREEN
-                            text_weight = ft.FontWeight.BOLD
-                    except:
-                        pass
-                elif col == 'Duration':
-                    # Highlight duration in blue to make it stand out
-                    text_color = ft.Colors.BLUE_700
-                    text_weight = ft.FontWeight.BOLD
-                
-                row_cells.append(
-                    ft.Container(
-                        content=ft.Text(
-                            cell_text, 
-                            size=font_size,
-                            color=text_color,
-                            weight=text_weight,
-                            text_align=ft.TextAlign.CENTER,
-                            
-                            max_lines=2
-                        ),
-                        padding=4,  # Reduced padding
-                        alignment=ft.alignment.center,
-                        bgcolor=row_color,
-                        border=ft.border.all(1, ft.Colors.GREY_300),
-                        width=width,
-                        height=50  # Reduced height
-                    )
-                )
-            
-            data_rows.append(ft.Row(row_cells, spacing=0))
-        
-        # SOLUTION 2: Make the table scrollable horizontally
-        table_content = ft.Column([
-            # Fixed header
-            ft.Container(
-                content=header_row,
-                padding=0
-            ),
-            # Scrollable data
-            ft.Container(
-                content=ft.Column(
-                    data_rows,
-                    scroll=ft.ScrollMode.ALWAYS,
-                    spacing=0,
-                    expand=True
-                ),
-                expand=True
-            )
-        ], spacing=0, expand=True)
-        
-        # Wrap the table in a horizontal scroll container
-        content = ft.Row(
-            controls=[
-                ft.Container(
-                    content=table_content,
-                    width=1200,  # Fixed width to trigger horizontal scroll
-        )
-    ],
-    scroll=ft.ScrollMode.ALWAYS,
-    expand=True
-)
-    
-    return create_container_with_header("เหตุการ์ณก่อนเกิด Alarm", content, table_height)
-
-# Renamed function and simplified to just show alarm frequency by line
-def create_alarm_frequency_table(alarm_df):
-    content = create_alarm_frequency_summary(alarm_df)
-    return create_container_with_header("สรุปความถี่การเกิด Alarm", content, table_height)
-
-# New function to create a simplified alarm frequency summary
-def create_alarm_frequency_summary(alarm_df):
-    CELL_WIDTH = 120
-    
+def create_alarm_table(alarm_df):
+    """Create a table showing alarm frequencies"""
     if len(alarm_df) == 0:
-        return ft.Text("No alarm data available", size=14, color=ft.Colors.GREY_700)
+        return ft.Text("ไม่มีข้อมูล Alarm")
     
-    # Prepare data - count alarms by line
-    all_lines = [f"{i:02d}" for i in range(1, 9)]
-    srm_lines = {line: f"SRM{line}" for line in all_lines}
-    
-    line_counts = {line: 0 for line in all_lines}
-    status_counts = {}
-    
-    if 'ASRS' in alarm_df.columns and 'PLCCODE' in alarm_df.columns:
-        alarm_df['LINE_STR'] = alarm_df['ASRS'].apply(
-            lambda x: f"{int(x):02d}" if isinstance(x, (int, float)) else str(x)
-        )
-        
-        # Count alarms by line
-        for _, row in alarm_df.iterrows():
-            line, status = row['LINE_STR'], row['PLCCODE']
-            if line in line_counts:
-                line_counts[line] += 1
-            
-            # Also count by status code for the status breakdown table
-            if status not in status_counts:
-                status_counts[status] = {'count': 0, 'description': Alarm_status_map.get(status, "Unknown")}
-            status_counts[status]['count'] += 1
-    
-    # Create header for line frequency table
-    header_cells = [
+    # Create table headers
+    headers = ft.Row([
         ft.Container(
-            width=CELL_WIDTH,
-            height=50,
+            content=ft.Text("รหัส Alarm", weight=ft.FontWeight.BOLD),
+            width=100,
+            padding=10,
             alignment=ft.alignment.center,
-            content=ft.Text("LINE", weight=ft.FontWeight.BOLD, size=14),
-            bgcolor=ft.Colors.BLUE_50,
-            border=ft.border.all(1, ft.Colors.GREY_400)
+            bgcolor=ft.Colors.BLUE_GREY_100,
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_300),
         ),
         ft.Container(
-            width=CELL_WIDTH,
-            height=50,
+            content=ft.Text("จำนวนครั้ง", weight=ft.FontWeight.BOLD),
+            width=100,
+            padding=10,
             alignment=ft.alignment.center,
-            content=ft.Text("Alarm Count", weight=ft.FontWeight.BOLD, size=14),
-            bgcolor=ft.Colors.BLUE_50,
-            border=ft.border.all(1, ft.Colors.GREY_400)
+            bgcolor=ft.Colors.BLUE_GREY_100,
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_300),
         ),
         ft.Container(
-            width=CELL_WIDTH,
-            height=50,
+            content=ft.Text("เปอร์เซ็นต์", weight=ft.FontWeight.BOLD),
+            width=100,
+            padding=10,
             alignment=ft.alignment.center,
-            content=ft.Text("Percentage", weight=ft.FontWeight.BOLD, size=14),
-            bgcolor=ft.Colors.BLUE_50,
-            border=ft.border.all(1, ft.Colors.GREY_400)
-        )
-    ]
+            bgcolor=ft.Colors.BLUE_GREY_100,
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_300),
+        ),
+        ft.Container(
+            content=ft.Text("รายละเอียด", weight=ft.FontWeight.BOLD),
+            width=500,
+            padding=10,
+            alignment=ft.alignment.center,
+            bgcolor=ft.Colors.BLUE_GREY_100,
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_300),
+        ),
+    ], spacing=0)
     
-    header_row = ft.Row(header_cells, spacing=0, tight=True)
+    # Calculate total for percentages
+    total_alarms = alarm_df['Count'].sum()
     
-    # Create data rows for line frequency
-    data_rows = []
-    total_alarms = sum(line_counts.values())
-    
-    for line in all_lines:
-        count = line_counts[line]
-        if count == 0 and state['line_logs'] != "All":
-            continue
-            
+    # Create rows
+    rows = []
+    for _, row in alarm_df.iterrows():
+        plc_code = row['PLCCODE']
+        count = row['Count']
         percentage = (count / total_alarms * 100) if total_alarms > 0 else 0
         
-        row_cells = [
-            ft.Container(
-                width=CELL_WIDTH,
-                height=40,
-                alignment=ft.alignment.center,
-                content=ft.Text(srm_lines[line], size=14, weight=ft.FontWeight.BOLD),
-                border=ft.border.all(1, ft.Colors.GREY_300)
-            ),
-            ft.Container(
-                width=CELL_WIDTH,
-                height=40,
-                alignment=ft.alignment.center,
-                content=ft.Text(
-                    str(count), 
-                    size=14,
-                    weight=ft.FontWeight.BOLD if count > 0 else None,
-                    color=ft.Colors.RED if count > 0 else None
-                ),
-                border=ft.border.all(1, ft.Colors.GREY_300)
-            ),
-            ft.Container(
-                width=CELL_WIDTH,
-                height=40,
-                alignment=ft.alignment.center,
-                content=ft.Text(
-                    f"{percentage:.1f}%", 
-                    size=14,
-                    weight=ft.FontWeight.BOLD if count > 0 else None
-                ),
-                border=ft.border.all(1, ft.Colors.GREY_300)
-            )
-        ]
+        # Get description from Alarm_status_map
+        description = Alarm_status_map.get(plc_code, "Unknown alarm")
         
-        data_rows.append(ft.Row(row_cells, spacing=0, tight=True))
-    
-    # Create total row
-    total_row_cells = [
-        ft.Container(
-            width=CELL_WIDTH,
-            height=40,
-            alignment=ft.alignment.center,
-            content=ft.Text("Total", size=14, weight=ft.FontWeight.BOLD),
-            bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.GREY_800),
-            border=ft.border.all(1, ft.Colors.GREY_300)
-        ),
-        ft.Container(
-            width=CELL_WIDTH,
-            height=40,
-            alignment=ft.alignment.center,
-            content=ft.Text(str(total_alarms), size=14, weight=ft.FontWeight.BOLD),
-            bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.GREY_800),
-            border=ft.border.all(1, ft.Colors.GREY_300)
-        ),
-        ft.Container(
-            width=CELL_WIDTH,
-            height=40,
-            alignment=ft.alignment.center,
-            content=ft.Text("100.0%", size=14, weight=ft.FontWeight.BOLD),
-            bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.GREY_800),
-            border=ft.border.all(1, ft.Colors.GREY_300)
-        )
-    ]
-    
-    total_row = ft.Row(total_row_cells, spacing=0, tight=True)
-    
-    # Create status breakdown table header
-    status_header_cells = [
-        ft.Container(
-            width=60,
-            height=40,
-            alignment=ft.alignment.center,
-            content=ft.Text("PLCCODE", weight=ft.FontWeight.BOLD, size=14),
-            bgcolor=ft.Colors.BLUE_50,
-            border=ft.border.all(1, ft.Colors.GREY_400)
-        ),
-        ft.Container(
-            width=60,
-            height=40,
-            alignment=ft.alignment.center,
-            content=ft.Text("Count", weight=ft.FontWeight.BOLD, size=14),
-            bgcolor=ft.Colors.BLUE_50,
-            border=ft.border.all(1, ft.Colors.GREY_400)
-        ),
-        ft.Container(
-            width=240,
-            height=40,
-            alignment=ft.alignment.center,
-            content=ft.Text("Description", weight=ft.FontWeight.BOLD, size=14),
-            bgcolor=ft.Colors.BLUE_50,
-            border=ft.border.all(1, ft.Colors.GREY_400)
-        )
-    ]
-    
-    status_header_row = ft.Row(status_header_cells, spacing=0, tight=True)
-    
-    # Create status data rows
-    status_data_rows = []
-    sorted_statuses = sorted(status_counts.items(), key=lambda x: x[1]['count'], reverse=True)
-    
-    for status, data in sorted_statuses:
-        status_row_cells = [
-            ft.Container(
-                width=60,
-                height=50,
-                alignment=ft.alignment.center,
-                content=ft.Text(str(status), size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.RED),
-                border=ft.border.all(1, ft.Colors.GREY_300)
-            ),
-            ft.Container(
-                width=60,
-                height=50,
-                alignment=ft.alignment.center,
-                content=ft.Text(str(data['count']), size=14),
-                border=ft.border.all(1, ft.Colors.GREY_300)
-            ),
-            ft.Container(
-                width=240,
-                height=50,
-                alignment=ft.alignment.center,
-                content=ft.Text(f"   {data['description']}", size=13, text_align=ft.TextAlign.LEFT ,overflow=ft.TextOverflow.ELLIPSIS ,max_lines=1 ),
-                border=ft.border.all(1, ft.Colors.GREY_300)
-            )
-        ]
+        row_color = ft.Colors.RED_50 if len(rows) % 2 == 0 else ft.Colors.WHITE
         
-        status_data_rows.append(ft.Row(status_row_cells, spacing=0, tight=True))
+        rows.append(ft.Row([
+            ft.Container(
+                content=ft.Text(str(plc_code), color=ft.Colors.RED_700, weight=ft.FontWeight.BOLD),
+                width=100,
+                padding=10,
+                alignment=ft.alignment.center,
+                bgcolor=row_color,
+                border=ft.border.all(1, ft.Colors.BLUE_GREY_200),
+            ),
+            ft.Container(
+                content=ft.Text(str(count)),
+                width=100,
+                padding=10,
+                alignment=ft.alignment.center,
+                bgcolor=row_color,
+                border=ft.border.all(1, ft.Colors.BLUE_GREY_200),
+            ),
+            ft.Container(
+                content=ft.Text(f"{percentage:.1f}%"),
+                width=100,
+                padding=10,
+                alignment=ft.alignment.center,
+                bgcolor=row_color,
+                border=ft.border.all(1, ft.Colors.BLUE_GREY_200),
+            ),
+            ft.Container(
+                content=ft.Text(description, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                width=500,
+                padding=10,
+                alignment=ft.alignment.center_left,
+                bgcolor=row_color,
+                border=ft.border.all(1, ft.Colors.BLUE_GREY_200),
+            ),
+        ], spacing=0))
     
-    # Combine all rows into columns
-    line_frequency_table = ft.Column([header_row] + data_rows + [total_row], spacing=0, tight=True)
-    status_breakdown_table = ft.Column([status_header_row] + status_data_rows, spacing=0, tight=True)
-    
-    # Add titles for each section
-    line_frequency_section = ft.Column([
+    # Combine headers and rows
+    return ft.Column([headers] + rows, spacing=0, scroll=ft.ScrollMode.AUTO)
+
+def create_line_summary_table(summary_df):
+    """Creates a table summarizing alarm counts per ASRS line."""
+    if summary_df.empty:
+        return ft.Text("No data to summarize.")
+
+    headers = ft.Row([
         ft.Container(
-            content=ft.Text("จำนวนการเกิด Alarm แยกตาม Line", size=16, weight=ft.FontWeight.BOLD),
-            margin=ft.margin.only(bottom=10)
+            content=ft.Text("ASRS Line", weight=ft.FontWeight.BOLD),
+            expand=1,
+            padding=10,
+            alignment=ft.alignment.center,
+            bgcolor=ft.Colors.BLUE_GREY_100,
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_300),
         ),
-        line_frequency_table,
-        ft.Container(height=20)  # Spacer
-    ])
-    
-    status_breakdown_section = ft.Column([
         ft.Container(
-            content=ft.Text("สถิติ Alarm Status", size=16, weight=ft.FontWeight.BOLD),
-            margin=ft.margin.only(bottom=10)
+            content=ft.Text("Total Alarms", weight=ft.FontWeight.BOLD),
+            expand=1,
+            padding=10,
+            alignment=ft.alignment.center,
+            bgcolor=ft.Colors.BLUE_GREY_100,
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_300),
         ),
-        status_breakdown_table
-    ])
-    
-    # Combine both tables into a single column
-    combined_content = ft.Column(
-        [line_frequency_section, status_breakdown_section],
-        scroll=ft.ScrollMode.AUTO,
-        expand=True
-    )
-    
-    return combined_content
+    ], spacing=0)
+
+    rows = []
+    for _, row in summary_df.iterrows():
+        row_color = ft.Colors.BLUE_50 if len(rows) % 2 == 0 else ft.Colors.WHITE
+        rows.append(ft.Row([
+            ft.Container(
+                content=ft.Text(f"SRM{row['ASRS']:02d}", weight=ft.FontWeight.BOLD),
+                expand=1,
+                padding=10,
+                alignment=ft.alignment.center,
+                bgcolor=row_color,
+                border=ft.border.all(1, ft.Colors.BLUE_GREY_200),
+            ),
+            ft.Container(
+                content=ft.Text(str(row['Count'])),
+                expand=1,
+                padding=10,
+                alignment=ft.alignment.center,
+                bgcolor=row_color,
+                border=ft.border.all(1, ft.Colors.BLUE_GREY_200),
+            ),
+        ], spacing=0))
+
+    return ft.Column([headers] + rows, spacing=0, scroll=ft.ScrollMode.AUTO)

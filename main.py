@@ -6,6 +6,7 @@ from views.asrs_logs_view import create_data_table_view as create_asrs_logs_view
 from views.statistics_view import create_statistics_view
 from views.login_view import create_login_view
 from views.chart_view import create_chart_view
+from views.before_alm_view import create_before_alarm_view
 from src.ui_components import on_date_change
 import threading
 
@@ -19,6 +20,13 @@ def update_view(page, tab_name=None):
             content=create_asrs_logs_view(page), 
             expand=True
         )
+        
+    if tab_name is None or tab_name == "ก่อนเกิด Alarm":
+        page.tabs["ก่อนเกิด Alarm"].content = ft.Container(
+            content=create_before_alarm_view(page), 
+            expand=True
+        )
+        
     if tab_name is None or tab_name == "สรุป Alarm":
         page.tabs["สรุป Alarm"].content = ft.Container(
             content=create_statistics_view(page), 
@@ -42,12 +50,12 @@ def load_data_async(page):
     page.splash.visible = False
     
     current_tab = page.tabs_control.selected_index
-    tab_names = ["กราฟ", "สรุป Alarm", "รายละเอียด"] 
+    tab_names = ["กราฟ", "ก่อนเกิด Alarm", "สรุป Alarm", "รายละเอียด"] 
     update_view(page, tab_names[current_tab])
 
 def on_tab_change(e, page):
     tab_index = e.control.selected_index
-    tab_names = ["กราฟ", "สรุป Alarm", "รายละเอียด"]
+    tab_names = ["กราฟ", "ก่อนเกิด Alarm", "สรุป Alarm", "รายละเอียด"]
 
     update_view(page, tab_names[tab_index])
 
@@ -78,6 +86,16 @@ def on_route_change(route, page):
             )
         )
         
+        tab_before_alarm = ft.Tab(
+            text="ก่อนเกิด Alarm",
+            icon=ft.Icon(name=ft.Icons.PREVIEW, color=ft.Colors.YELLOW),
+            content=ft.Container(
+                content=ft.Text("Loading..."),
+                alignment=ft.alignment.center,
+                expand=True
+            )
+        )
+        
         tab_summary = ft.Tab(
             text="สรุป Alarm",
             icon=ft.Icon(name=ft.Icons.ANALYTICS, color=ft.Colors.ORANGE),
@@ -98,12 +116,17 @@ def on_route_change(route, page):
             )
         )
     
-        page.tabs = {"กราฟ": tab_chart, "สรุป Alarm": tab_summary, "รายละเอียด": tab_details}  # type: ignore
+        page.tabs = {
+            "กราฟ": tab_chart, 
+            "ก่อนเกิด Alarm": tab_before_alarm,
+            "สรุป Alarm": tab_summary, 
+            "รายละเอียด": tab_details
+        }  # type: ignore
     
         tabs_control = ft.Tabs(
             selected_index=0, 
             animation_duration=300,
-            tabs=[tab_chart, tab_summary, tab_details], 
+            tabs=[tab_chart, tab_before_alarm, tab_summary, tab_details], 
             indicator_color=ft.Colors.BLUE_600,
             on_change=lambda e: on_tab_change(e, page),
             expand=True
@@ -164,5 +187,6 @@ def main(page: ft.Page):
     
     # Start with login page
     page.go("/login")
+
 if __name__ == "__main__":
     ft.app(target=main, view=ft.WEB_BROWSER, host="0.0.0.0", port=7777)  # type: ignore

@@ -28,36 +28,46 @@ def build_data_table(df):
             pass
         return None
     
+    # Define column order and widths - this order will be used for display
     column_widths = {
-            'CDATE': 150,
-            'ASRS': 60,
-            'BARCODE': 90, 
-            'CHKTYPE': 90,
-            'MSGLOG': 250,
-            'MSGTYPE': 80,
-            'PLCCODE': 80,
-            'Command_X_Pos (D174)': 120,
-            'X_Distance_mm (D57)': 120,
-            'Start_Bank (D130)': 100,
-            'Start_Pos_mm (D131)': 120,
-            'Start_Level_mm (D133)': 120,
-            'End_Bank (D134)': 100,
-            'End_Position_mm (D135)': 120,
-            'End_Level_mm (D137)': 120,
-            'Pallet_ID (D138)': 100,
-            'Present_Bay_Arm1 (D140)': 120,
-            'Present_Level (D145)': 120,
-            'Status_Arm1 (D146)': 100,
-            'Status (D147)': 100,
-            'Command Machine (D148)': 130
-        }
+        'CDATE': 150,
+        'ASRS': 60,
+        'BARCODE': 90, 
+        'CHKTYPE': 90,
+        'MSGLOG': 250,
+        'MSGTYPE': 90,
+        'PLCCODE': 90,
+        'X_Distance_mm (D57)': 120,
+        'Start_Bank (D130)': 100,
+        'Start_Pos_mm (D131)': 120,
+        'Start_Level_mm (D133)': 120,
+        'End_Bank (D134)': 100,
+        'End_Position_mm (D135)': 120,
+        'End_Level_mm (D137)': 120,
+        'Pallet_ID (D138)': 100,
+        'Present_Bay_Arm1 (D140)': 120,
+        'Present_Level (D145)': 120,
+        'Status_Arm1 (D146)': 100,
+        'Status (D147)': 100,
+        'Command Machine (D148)': 130,
+        'Command_X_Pos (D174)': 120,
+    }
+    
+    # Reorder DataFrame columns based on column_widths order
+    ordered_columns = [col for col in column_widths.keys() if col in display_df.columns]
+    # Add any remaining columns that aren't in column_widths
+    remaining_columns = [col for col in display_df.columns if col not in ordered_columns]
+    final_column_order = ordered_columns + remaining_columns
+    
+    # Reorder the DataFrame
+    display_df = display_df[final_column_order]
     
     header_display_names = {
-            'CDATE': 'CDATE',
-            'ASRS': 'SRM LINE'
-        }
+        'CDATE': 'CDATE',
+        'ASRS': 'SRM LINE'
+    }
     
-    # Create header cells with fixed widths and custom names
+    # Create header cells with fixed widths and custom names in the new order
     header_cells = []
     for col in display_df.columns:
         width = column_widths.get(col, 120)
@@ -82,7 +92,7 @@ def build_data_table(df):
     
     header_row = ft.Row(header_cells, spacing=0)
     
-    # Create data rows
+    # Create data rows in the new column order
     data_rows = []
     for idx, (_, row) in enumerate(display_df.iterrows()):
         row_cells = []
@@ -98,7 +108,9 @@ def build_data_table(df):
         if not row_color:
             row_color = ft.Colors.with_opacity(0.05, ft.Colors.GREY_800) if idx % 2 == 0 else ft.Colors.WHITE
         
-        for col, value in row.items():
+        # Process columns in the display order
+        for col in display_df.columns:
+            value = row[col]
             width = column_widths.get(col, 120)
             
             if pd.isna(value):
@@ -164,8 +176,8 @@ def build_data_table(df):
         )
     ], spacing=0, expand=True)
     
-    # Calculate total width for horizontal scrolling
-    total_width = sum(column_widths.values())
+    # Calculate total width for horizontal scrolling based on ordered columns
+    total_width = sum(column_widths.get(col, 120) for col in display_df.columns)
     
     # Wrap in horizontal scroll container
     return ft.Container(
