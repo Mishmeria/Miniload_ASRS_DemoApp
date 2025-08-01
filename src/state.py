@@ -11,5 +11,9 @@ state = {
     'status_logs': "All",
     'selected_date': None,
     'df_loops': None,
-    'df_logs': None
+    'df_logs': None,
+    'start_time': "All",
+    'end_time': "All",
+    'time_filter_active': False,
+    'filter_choice': "All"
 }

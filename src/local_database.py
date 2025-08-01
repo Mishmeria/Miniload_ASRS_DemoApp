@@ -18,7 +18,6 @@ def get_connection_string():
 def load_data():
     engine = create_engine(get_connection_string())
     
-    # Check if a date filter is selected
     date_filter = ""
     date_params = {}
     
@@ -34,7 +33,6 @@ def load_data():
     else:
         logs_date_filter = ""
     
-    
     logs_query = f"""
         SELECT [TimeStamp],[LINE],[PalletID],[Duration],[Status],[Command],
                [PresentBay],[PresentLevel],[DistanceX],[DistanceY],
@@ -46,17 +44,19 @@ def load_data():
         {logs_date_filter}
         ORDER BY TimeStamp DESC
     """
+
+    logs_query = f"""
+        SELECT [ASRS],[BARCODE],[CHKTYPE],[MSGLOG],[CDATE],[MSGTYPE],[PLCCODE],[MONITORDATA]
+        FROM [WCSLOG].[dbo].[LogMnpAsrs]
+        {logs_date_filter}
+        ORDER BY TimeStamp DESC
+    """
     
-    #df_loops = pd.read_sql(loop_query, engine)
     df_logs = pd.read_sql(logs_query, engine)
-    
-    # Preprocess
+
     df_logs["LINE"] = df_logs["LINE"].str.extract(r"LINE(\d+)-MP").astype("Int64")
-    #df_loops.rename(columns={"TimeStart": "TimeStamp"}, inplace=True)
-    #df_loops['TimeStamp'] = pd.to_datetime(df_loops['TimeStamp'])
     df_logs['TimeStamp'] = pd.to_datetime(df_logs['TimeStamp'])
     
-    #state['df_loops'] = df_loops
     state['df_logs'] = df_logs
     
     date_info = f" for {state['selected_date'].strftime('%Y-%m-%d')}" if 'selected_date' in state and state['selected_date'] else ""

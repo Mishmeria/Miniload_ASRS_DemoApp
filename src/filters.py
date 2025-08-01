@@ -22,6 +22,39 @@ def apply_filters(df, line_filter, status_filter, date_filter, table_type):
                 # If status_filter is not a number, try to match it as a string
                 filtered_df = filtered_df[filtered_df["Status"].astype(str) == status_filter]
     
+    if state.get('time_filter_active', False) and 'TimeStamp' in filtered_df.columns:
+        start_time = state.get('start_time', "All")
+        end_time = state.get('end_time', "All")
+        
+        if start_time != "All" and end_time != "All":
+            # Convert TimeStamp to datetime if it's not already
+            if not pd.api.types.is_datetime64_any_dtype(filtered_df['TimeStamp']):
+                filtered_df['TimeStamp'] = pd.to_datetime(filtered_df['TimeStamp'], errors='coerce')
+            
+            # Extract time from datetime and filter
+            filtered_df['time_only'] = filtered_df['TimeStamp'].dt.strftime('%H:%M')
+            
+            # Convert start and end times to comparable format
+            start_hour, start_minute = map(int, start_time.split(':'))
+            end_hour, end_minute = map(int, end_time.split(':'))
+            
+            # Extract hour from TimeStamp for comparison
+            filtered_df['hour'] = filtered_df['TimeStamp'].dt.hour
+            
+            # Filter by time range
+            # For cases where start_time < end_time (e.g., 08:00-19:00)
+            mask = (filtered_df['hour'] >= start_hour) & (filtered_df['hour'] < end_hour)
+            
+            # Also include exact matches for the end hour (e.g., 19:00)
+            # but only if the minute is 00 (since we're using whole hours)
+            if end_minute == 0:
+                mask = mask | ((filtered_df['hour'] == end_hour) & (filtered_df['TimeStamp'].dt.minute == 0))
+                
+            filtered_df = filtered_df[mask]
+            
+            # Remove temporary columns
+            filtered_df = filtered_df.drop(['time_only', 'hour'], axis=1)
+    
     return filtered_df
 
 def get_status_stats(df, line_filter="All", selected_date=None):

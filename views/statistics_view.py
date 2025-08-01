@@ -13,7 +13,7 @@ from src.ui_components import create_filter_controls # type: ignore
 from views.Status_Detail import Alarm_status_map, Normal_status_map , ALARM_CATEGORIES , CATEGORY_COLORS
 
 # Alarm categories
-table_height = 460
+table_height = 500
 cells_width = 180
 else_width = 70
 
@@ -186,7 +186,7 @@ def create_main_layout(alarm_df, before_alarm_df):
         margin=ft.margin.only(top=10, bottom=15)
     )
 
-def create_container_with_header(title, content, height=600):
+def create_container_with_header(title, content, height):
     return ft.Container(
         content=ft.Column([
             ft.Container(
@@ -243,13 +243,13 @@ def create_pre_alarm_table(before_alarm_df):
             'PalletID': 80,
             'PresentLevel': 60, 
             'PresentBay': 60,   
-            'AlarmTime': 140,    
+            'AlarmTime': 120,    
             'Alarm': 70,
             'Detail': 220,       
-            'TimeStamp': 140,  
+            'TimeStamp': 120,  
             'Status': 70,
             'Description': 220,  
-            'Duration': 80      
+            'Duration': 120      
         }
         
         # Column display names mapping
@@ -396,12 +396,12 @@ def create_pre_alarm_table(before_alarm_df):
     expand=True
 )
     
-    return create_container_with_header("เหตุการ์ณก่อนเกิด Alarm", content, height=465)
+    return create_container_with_header("เหตุการ์ณก่อนเกิด Alarm", content, table_height)
 
 # Renamed function and simplified to just show alarm frequency by line
 def create_alarm_frequency_table(alarm_df):
     content = create_alarm_frequency_summary(alarm_df)
-    return create_container_with_header("สรุปความถี่การเกิด Alarm", content, height=table_height)
+    return create_container_with_header("สรุปความถี่การเกิด Alarm", content, table_height)
 
 # New function to create a simplified alarm frequency summary
 def create_alarm_frequency_summary(alarm_df):
@@ -542,7 +542,7 @@ def create_alarm_frequency_summary(alarm_df):
     # Create status breakdown table header
     status_header_cells = [
         ft.Container(
-            width=80,
+            width=60,
             height=40,
             alignment=ft.alignment.center,
             content=ft.Text("Status", weight=ft.FontWeight.BOLD, size=14),
@@ -550,7 +550,7 @@ def create_alarm_frequency_summary(alarm_df):
             border=ft.border.all(1, ft.Colors.GREY_400)
         ),
         ft.Container(
-            width=80,
+            width=60,
             height=40,
             alignment=ft.alignment.center,
             content=ft.Text("Count", weight=ft.FontWeight.BOLD, size=14),
@@ -558,7 +558,7 @@ def create_alarm_frequency_summary(alarm_df):
             border=ft.border.all(1, ft.Colors.GREY_400)
         ),
         ft.Container(
-            width=200,
+            width=240,
             height=40,
             alignment=ft.alignment.center,
             content=ft.Text("Description", weight=ft.FontWeight.BOLD, size=14),
@@ -576,24 +576,24 @@ def create_alarm_frequency_summary(alarm_df):
     for status, data in sorted_statuses:
         status_row_cells = [
             ft.Container(
-                width=80,
-                height=35,
+                width=60,
+                height=50,
                 alignment=ft.alignment.center,
                 content=ft.Text(str(status), size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.RED),
                 border=ft.border.all(1, ft.Colors.GREY_300)
             ),
             ft.Container(
-                width=80,
-                height=35,
+                width=60,
+                height=50,
                 alignment=ft.alignment.center,
                 content=ft.Text(str(data['count']), size=14),
                 border=ft.border.all(1, ft.Colors.GREY_300)
             ),
             ft.Container(
-                width=200,
-                height=35,
+                width=240,
+                height=50,
                 alignment=ft.alignment.center,
-                content=ft.Text(data['description'], size=13, text_align=ft.TextAlign.CENTER),
+                content=ft.Text(f"   {data['description']}", size=13, text_align=ft.TextAlign.LEFT ,overflow=ft.TextOverflow.ELLIPSIS ,max_lines=1 ),
                 border=ft.border.all(1, ft.Colors.GREY_300)
             )
         ]
@@ -616,7 +616,7 @@ def create_alarm_frequency_summary(alarm_df):
     
     status_breakdown_section = ft.Column([
         ft.Container(
-            content=ft.Text("รายละเอียด Alarm Status", size=16, weight=ft.FontWeight.BOLD),
+            content=ft.Text("สถิติ Alarm Status", size=16, weight=ft.FontWeight.BOLD),
             margin=ft.margin.only(bottom=10)
         ),
         status_breakdown_table

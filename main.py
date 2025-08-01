@@ -26,8 +26,6 @@ def update_view(page, tab_name=None):
         )
     
     if tab_name is None or tab_name == "กราฟ":
-        # For now, just show a placeholder for the chart tab
-        # You can replace this with actual chart implementation later
         page.tabs["กราฟ"].content = ft.Container(
             content=create_chart_view(page),
             expand=True
@@ -57,7 +55,6 @@ def on_route_change(route, page):
     page.views.clear()
     
     if route.route == "/login" or route.route == "/":
-        # Show login page
         page.views.append(
             ft.View(
                 route="/login",
@@ -67,12 +64,10 @@ def on_route_change(route, page):
             )
         )
     elif route.route == "/main":
-        # Check if user is logged in
         if not state.get('logged_in', False):
             page.go("/login")
             return
         
-        # Show main application
         tab_chart = ft.Tab(
             text="กราฟ",
             icon=ft.Icon(name=ft.Icons.BAR_CHART, color=ft.Colors.BLUE),
@@ -103,21 +98,18 @@ def on_route_change(route, page):
             )
         )
     
-        # Store tabs for updates - note the order here matches the visual order
         page.tabs = {"กราฟ": tab_chart, "สรุป Alarm": tab_summary, "รายละเอียด": tab_details}  # type: ignore
     
-        # Create tabs control with lazy loading - put tab_chart first
         tabs_control = ft.Tabs(
-            selected_index=0,  # Start with the first tab (now "กราฟ")
+            selected_index=0, 
             animation_duration=300,
-            tabs=[tab_chart, tab_summary, tab_details],  # Changed order here
+            tabs=[tab_chart, tab_summary, tab_details], 
             indicator_color=ft.Colors.BLUE_600,
             on_change=lambda e: on_tab_change(e, page),
             expand=True
         )
         page.tabs_control = tabs_control  # type: ignore
         
-        # Add logout button to app bar
         def logout(e):
             state['logged_in'] = False
             page.go("/login")
@@ -128,7 +120,6 @@ def on_route_change(route, page):
             on_click=logout
         )
         
-        # Main layout
         main_content = ft.Column([
             ft.Container(
                 content=tabs_control,
@@ -146,7 +137,7 @@ def on_route_change(route, page):
                 padding=20
             )
         )
-        # Load data asynchronously after UI is rendered
+
         threading.Thread(target=lambda: load_data_async(page)).start()
 
     page.update()

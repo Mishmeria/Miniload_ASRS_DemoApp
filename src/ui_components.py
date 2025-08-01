@@ -73,11 +73,23 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
 
     if 'filter_choice' not in state:
         state['filter_choice'] = "All"
+    
+    # Initialize time filter states if not present
+    if 'start_time' not in state:
+        state['start_time'] = "All"
+    if 'end_time' not in state:
+        state['end_time'] = "All"
+    if 'time_filter_active' not in state:
+        state['time_filter_active'] = False
 
     line_filter = state['line_logs']
     status_filter = state['status_logs']
     filter_choice = state['filter_choice']
     status_choices = get_unique_statuses(filter_choice)
+    
+    # Generate time options for dropdowns (hourly from 08:00 to 18:00 for start, 09:00 to 19:00 for end)
+    start_time_options = ["All"] + [f"{hour:02d}:00" for hour in range(8, 19)]
+    end_time_options = ["All"] + [f"{hour:02d}:00" for hour in range(9, 20)]
     
     # Date display text
     date_text = f"Selected: {state['selected_date'].strftime('%Y-%m-%d') if state['selected_date'] else 'No date selected'}"
@@ -119,8 +131,9 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
             )
         )
     
-    # Center section: Date controls
+    # Center section: Date and Time controls
     center_controls = ft.Column([
+        # Date selection row
         ft.Row([
             create_button(
                 "Select Date", 
@@ -129,12 +142,54 @@ def create_filter_controls(page, table_type=None, show_status=True, show_refresh
                 bgcolor=ft.Colors.BLUE_100
             ),
         ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+        
+        # Date display
         ft.Container(
             content=ft.Text(date_text, size=12, weight=ft.FontWeight.W_500, text_align=ft.TextAlign.CENTER),
             padding=ft.padding.symmetric(horizontal=10, vertical=5),
             bgcolor=ft.Colors.BLUE_50, 
             border_radius=4,
             alignment=ft.alignment.center
+        ),
+        
+        # Time range selection row
+        ft.Row([
+            create_dropdown(
+                "Start Time", 
+                state['start_time'], 
+                start_time_options,
+                120, 
+                lambda e: on_start_time_change(e, page)
+            ),
+            create_dropdown(
+                "End Time", 
+                state['end_time'], 
+                end_time_options,
+                120, 
+                lambda e: on_end_time_change(e, page)
+            ),
+            create_button(
+                "Apply Time Filter", 
+                ft.Icons.ACCESS_TIME, 
+                lambda e: apply_time_filter(e, page),
+                bgcolor=ft.Colors.GREEN_100 if state.get('time_filter_active', False) else ft.Colors.GREY_300,
+                height=40
+            ),
+        ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+        
+        # Time filter status display (optional)
+        ft.Container(
+            content=ft.Text(
+                f"Time Filter: {state['start_time']} - {state['end_time']}" if state.get('time_filter_active', False) else "Time Filter: OFF",
+                size=12, 
+                weight=ft.FontWeight.W_500, 
+                text_align=ft.TextAlign.CENTER
+            ),
+            padding=ft.padding.symmetric(horizontal=10, vertical=5),
+            bgcolor=ft.Colors.GREEN_50 if state.get('time_filter_active', False) else ft.Colors.GREY_100, 
+            border_radius=4,
+            alignment=ft.alignment.center,
+            visible=state['start_time'] != "All" or state['end_time'] != "All" or state.get('time_filter_active', False)
         )
     ], spacing=5, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
     
@@ -205,6 +260,89 @@ def on_status_filter_change(e, table_type, page):
     from main import update_view
     update_view(page)
 
+def on_start_time_change(e, page):
+    state['start_time'] = e.control.value
+    
+    # If end time is "All" or start time is after end time, adjust end time
+    if state['end_time'] == "All" and state['start_time'] != "All":
+        # Set end time to one hour after start time or 19:00 (max)
+        start_hour = int(state['start_time'].split(':')[0])
+        end_hour = min(start_hour + 1, 19)
+        state['end_time'] = f"{end_hour:02d}:00"
+    elif state['start_time'] != "All" and state['end_time'] != "All":
+        # Check if start time is after end time
+        start_hour = int(state['start_time'].split(':')[0])
+        end_hour = int(state['end_time'].split(':')[0])
+        if start_hour >= end_hour:
+            # Adjust end time to be at least one hour after start time
+            end_hour = min(start_hour + 1, 19)
+            state['end_time'] = f"{end_hour:02d}:00"
+    
+    # Deactivate time filter when changing selection
+    state['time_filter_active'] = False
+    
+    from main import update_view
+    update_view(page)
+
+def on_end_time_change(e, page):
+    state['end_time'] = e.control.value
+    
+    # If start time is "All" or end time is before start time, adjust start time
+    if state['start_time'] == "All" and state['end_time'] != "All":
+        # Set start time to one hour before end time or 08:00 (min)
+        end_hour = int(state['end_time'].split(':')[0])
+        start_hour = max(end_hour - 1, 8)
+        state['start_time'] = f"{start_hour:02d}:00"
+    elif state['start_time'] != "All" and state['end_time'] != "All":
+        # Check if end time is before start time
+        start_hour = int(state['start_time'].split(':')[0])
+        end_hour = int(state['end_time'].split(':')[0])
+        if end_hour <= start_hour:
+            # Adjust start time to be at least one hour before end time
+            start_hour = max(end_hour - 1, 8)
+            state['start_time'] = f"{start_hour:02d}:00"
+    
+    # Deactivate time filter when changing selection
+    state['time_filter_active'] = False
+    
+    from main import update_view
+    update_view(page)
+
+def apply_time_filter(e, page):
+    # Show loading indicator
+    page.splash.visible = True
+    page.update()
+    
+    # Only activate if both start and end times are selected
+    if state['start_time'] != "All" and state['end_time'] != "All":
+        # Toggle the time filter state
+        state['time_filter_active'] = True
+        state['page_logs'] = 0
+        
+        page.snack_bar = ft.SnackBar(
+            content=ft.Row([
+                ft.Text(f"Time filter applied: {state['start_time']} - {state['end_time']}"),
+            ]),
+            action="Dismiss",
+            on_action=lambda _: None
+        )
+    else:
+        # Notify user that both times need to be selected
+        page.snack_bar = ft.SnackBar(
+            content=ft.Row([
+                ft.Text("Please select both start and end times to apply the filter."),
+            ]),
+            action="Dismiss",
+            on_action=lambda _: None
+        )
+    
+    page.snack_bar.open = True
+    
+    # Hide loading indicator and update the view
+    page.splash.visible = False
+    from main import update_view
+    update_view(page)
+
 def on_date_change(e, page):
     # Show loading indicator
     page.splash.visible = True
@@ -242,11 +380,15 @@ def clear_filter(e, page):
     page.splash.visible = True
     page.update()
     
-    # Clear the selected date in state
+    # Clear all filters
     state['page_logs'] = 0
     state['line_logs'] = "All"
     state['status_logs'] = "All"
     state['filter_choice'] = "All"
+    state['start_time'] = "All"
+    state['end_time'] = "All"
+    state['time_filter_active'] = False
+    
     # Hide loading indicator and update the view
     page.splash.visible = False
     from main import update_view
@@ -272,6 +414,9 @@ def refresh_data(e, page):
         state['status_loops'] = "All"
         state['status_logs'] = "All"
         state['filter_choice'] = "All"
+        state['start_time'] = "All"
+        state['end_time'] = "All"
+        state['time_filter_active'] = False
         # Note: We don't reset selected_date here to keep the current date filter
         
         from src.database import load_data
