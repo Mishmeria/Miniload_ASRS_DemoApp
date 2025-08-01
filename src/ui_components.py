@@ -3,6 +3,7 @@ import pandas as pd
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from datetime import datetime, timedelta
 from src.state import state
 from src.filters import apply_filters, get_status_stats
 from views.Status_Detail import ALARM_CATEGORIES, CATEGORY_COLORS , Alarm_status_map, Normal_status_map
@@ -357,7 +358,7 @@ def on_date_change(e, page):
     page.snack_bar.open = True
     # Reload data from database with the new date filter
     from src.local_database import load_data #change to src.database for cloud
-    load_data()
+    load_data(start_date=state['selected_date'], end_date=state['selected_date'] + timedelta(days=1))
     
     # Hide loading indicator and update the view
     page.splash.visible = False
@@ -409,7 +410,7 @@ def refresh_data(e, page):
         # Note: We don't reset selected_date here to keep the current date filter
         
         from src.database import load_data
-        load_data()
+        load_data(start_date=state['selected_date'], end_date=state['selected_date'] + timedelta(days=1))
         from main import update_view
         update_view(page)
         

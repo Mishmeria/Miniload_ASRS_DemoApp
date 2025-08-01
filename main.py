@@ -45,7 +45,7 @@ def load_data_async(page):
     page.splash.visible = True
     page.update()
 
-    load_data()
+    load_data(start_date=state['selected_date'], end_date=state['selected_date'] + timedelta(days=1))
     
     page.splash.visible = False
     
