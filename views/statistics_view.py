@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from src.state import state
 from src.filters import get_status_stats, apply_filters
 from src.ui_components import create_filter_controls
-from src.local_database import load_data
+from src.database import load_data #use src.database for cloud, src.local_database for local
 from views.Status_Detail import Alarm_status_map
 
 # Define ASRS line options
