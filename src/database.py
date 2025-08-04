@@ -3,6 +3,7 @@ import requests
 from datetime import datetime, timedelta
 from src.state import state
 import json
+import re
 
 # API Configuration - Connect to VPN Gateway
 API_CONFIG = {
@@ -18,6 +19,85 @@ API_CONFIG = {
         'X-Client-IP': '10.0.0.1'  # Identify client IP for logging 10.0.0.1 for cloud 127.0.0.1 for local
     }
 }
+
+# D Register meanings dictionary
+D_REGISTER_MEANINGS = {
+    'D174': 'Command_X_Pos (D174)',
+    'D57':  'X_Distance_mm (D57) ',
+    'D130': 'Start_Bank (D130)',
+    'D131': 'Start_Pos_mm (D131)',
+    'D133': 'Start_Level_mm (D133)',
+    'D134': 'End_Bank (D134)',
+    'D135': 'End_Position_mm (D135)',
+    'D137': 'End_Level_mm (D137)',
+    'D138': 'Pallet_ID (D138)',
+    'D140': 'Present_Bay_Arm1 (D140)',
+    'D145': 'Present_Level (D145)',
+    'D146': 'Status_Arm1 (D146)',
+    'D147': 'Status (D147)',
+    'D148': 'Command Machine (D148)',
+}
+
+def process_monitor_data(df_logs):
+    """
+    Process MONITORDATA column and add parsed columns to the DataFrame.
+    This function ensures all monitor data parsing happens in one place.
+    """
+    if df_logs.empty:
+        print("DataFrame is empty, skipping monitor data processing")
+        return df_logs
+    
+    if 'MONITORDATA' not in df_logs.columns:
+        print("MONITORDATA column not found, skipping monitor data processing")
+        return df_logs
+    
+    # Check if there's any data to parse
+    has_monitor_data = df_logs['MONITORDATA'].notna().any()
+    if not has_monitor_data:
+        print("No MONITORDATA to parse, removing empty column")
+        return df_logs.drop(columns=['MONITORDATA'])
+    
+    print("Processing MONITORDATA on client side...")
+    
+    try:
+        # Apply parsing function to each row
+        parsed_data = df_logs['MONITORDATA'].apply(parse_monitor_data).tolist()
+        monitor_df = pd.DataFrame(parsed_data)
+        
+        if not monitor_df.empty:
+            # Concatenate the parsed monitor data columns
+            df_logs = pd.concat([df_logs, monitor_df], axis=1)
+            print(f"Successfully added {len(monitor_df.columns)} parsed monitor data columns: {list(monitor_df.columns)}")
+        else:
+            print("No valid monitor data found after parsing")
+        
+        # Remove the original MONITORDATA column as it's now parsed
+        df_logs = df_logs.drop(columns=['MONITORDATA'])
+        
+    except Exception as e:
+        print(f"Error processing monitor data: {e}")
+        print("Keeping original MONITORDATA column due to parsing error")
+    
+    return df_logs
+
+def parse_monitor_data(monitor_data):
+    """Parse the MONITORDATA field and extract D register values."""
+    if pd.isna(monitor_data) or not isinstance(monitor_data, str):
+        return {}
+    
+    # Regular expression to extract D register values
+    pattern = r'D(\d+)=(\d+)'
+    matches = re.findall(pattern, monitor_data)
+    
+    # Create dictionary of D register values
+    d_values = {}
+    for register, value in matches:
+        d_key = f'D{register}'
+        if d_key in D_REGISTER_MEANINGS:
+            # Use the meaningful name as the key
+            d_values[D_REGISTER_MEANINGS[d_key]] = int(value.strip())
+    
+    return d_values
 
 class APIClient:
     def __init__(self):
@@ -37,6 +117,13 @@ class APIClient:
                     headers=self.headers, 
                     timeout=self.timeout
                 )
+
+                print(f"Response status: {response.status_code}")
+                print(f"Response URL: {response.url}")
+
+                response.raise_for_status()  # Raise an exception for bad status codes
+                return response.json()
+            
             elif method == 'POST':
                 response = requests.post(
                     url, 
@@ -44,12 +131,14 @@ class APIClient:
                     headers=self.headers, 
                     timeout=self.timeout
                 )
-            
+                
                 print(f"Response status: {response.status_code}")
                 print(f"Response URL: {response.url}")
 
                 response.raise_for_status()  # Raise an exception for bad status codes
                 return response.json()
+            
+            
             
         except requests.exceptions.RequestException as e:
             print(f"API request failed: {e}")
@@ -126,7 +215,7 @@ def load_data(start_date=None, end_date=None):
             return False
         
         # Ensure required columns exist (matching local_database.py structure)
-        required_columns = ['ASRS', 'BARCODE', 'CHKTYPE', 'MSGLOG', 'CDATE', 'MSGTYPE', 'PLCCODE']
+        required_columns = ['ASRS', 'BARCODE', 'CHKTYPE', 'MSGLOG', 'CDATE', 'MSGTYPE', 'PLCCODE', 'MONITORDATA']
         for col in required_columns:
             if col not in df_logs.columns:
                 df_logs[col] = None
@@ -140,6 +229,10 @@ def load_data(start_date=None, end_date=None):
         # Convert timestamp (API returns string, convert back to datetime)
         if 'CDATE' in df_logs.columns:
             df_logs['CDATE'] = pd.to_datetime(df_logs['CDATE'], errors="coerce")
+        
+        # Parse monitor data and add columns (CLIENT-SIDE PROCESSING)
+        df_logs = process_monitor_data(df_logs)
+        print("Monitor data processing completed")
         
         # Store in state
         state['df_logs'] = df_logs
@@ -187,4 +280,49 @@ def test_vpn_connectivity():
         sock.close()
         return result == 0
     except:
+        return False
+
+# Convenience function for other files to get processed data
+def get_processed_logs_data():
+    """
+    Get the processed logs data from state.
+    If data exists but hasn't been processed, process it.
+    Returns the DataFrame with parsed monitor data columns.
+    """
+    if 'df_logs' not in state or state['df_logs'] is None:
+        print("No logs data in state. Call load_data() first.")
+        return None
+    
+    df_logs = state['df_logs'].copy()
+    
+    # Check if data needs processing (has MONITORDATA column)
+    if 'MONITORDATA' in df_logs.columns:
+        print("Data needs monitor processing, processing now...")
+        df_logs = process_monitor_data(df_logs)
+        # Update state with processed data
+        state['df_logs'] = df_logs
+    
+    return df_logs
+
+# Function to force reprocessing of monitor data
+def reprocess_monitor_data():
+    """
+    Force reprocessing of monitor data.
+    Useful if parsing logic has been updated.
+    """
+    if 'df_logs' not in state or state['df_logs'] is None:
+        print("No logs data in state to reprocess.")
+        return False
+    
+    # Note: This assumes you have the original data with MONITORDATA
+    # If you don't, you'll need to reload from API
+    df_logs = state['df_logs'].copy()
+    
+    if 'MONITORDATA' in df_logs.columns:
+        df_logs = process_monitor_data(df_logs)
+        state['df_logs'] = df_logs
+        print("Monitor data reprocessed successfully")
+        return True
+    else:
+        print("No MONITORDATA column found. Data may already be processed or needs to be reloaded.")
         return False
