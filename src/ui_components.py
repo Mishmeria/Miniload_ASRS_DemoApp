@@ -357,7 +357,7 @@ def on_date_change(e, page):
     )
     page.snack_bar.open = True
     # Reload data from database with the new date filter
-    from src.local_database import load_data #change to src.database for cloud
+    from src.database import load_data #change to src.database for cloud
     load_data(start_date=state['selected_date'], end_date=state['selected_date'] + timedelta(days=1))
     
     # Hide loading indicator and update the view
