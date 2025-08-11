@@ -7,11 +7,12 @@ from views.statistics_view import create_statistics_view
 from views.login_view import create_login_view
 from views.chart_view import create_chart_view
 from views.before_alm_view import create_before_alarm_view
-from src.ui_components import on_date_change
+from src.ui_components import on_date_change, on_end_date_change
 import threading
 
 # Initialize state variables
 state['selected_date'] = datetime.now()
+state['end_date'] = state['selected_date'] + timedelta(days=1)  # Default end date is one day after selected date
 state['logged_in'] = False
 
 def update_view(page, tab_name=None):
@@ -45,7 +46,7 @@ def load_data_async(page):
     page.splash.visible = True
     page.update()
 
-    load_data(start_date=state['selected_date'], end_date=state['selected_date'] + timedelta(days=1))
+    load_data(start_date=state['selected_date'], end_date=state['end_date'])
     
     page.splash.visible = False
     
@@ -182,6 +183,12 @@ def main(page: ft.Page):
     )
     page.overlay.append(page.date_picker)  # type: ignore
     
+    page.end_date_picker = ft.DatePicker(  # type: ignore
+        first_date=datetime(2020, 1, 1),
+        last_date=datetime(2030, 12, 31),
+        on_change=lambda e: on_end_date_change(e, page)
+    )
+    page.overlay.append(page.end_date_picker)  # type: ignore
     # Set up routing
     page.on_route_change = lambda route: on_route_change(route, page)
     

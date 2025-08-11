@@ -58,7 +58,7 @@ def create_task_progress_gauge():
     )
 
 def create_before_alarm_view(page):
-    filter_controls = create_filter_controls(page=page, table_type=None, show_status=False, show_refresh=True)
+    filter_controls = create_filter_controls(page=page, show_status=False)
     loading_view = ft.Column([
         ft.Container(
             content=ft.Column([

@@ -23,9 +23,7 @@ def create_chart_view(page):
 
     filter_controls = create_filter_controls(
         page=page,
-        table_type="ASRS_Logs",
-        show_status=True,
-        show_refresh=True
+        show_status=True
     )
     
     # Create status frequency chart
@@ -274,7 +272,7 @@ def create_chart_view(page):
         expand=True,
         padding=20,
         bgcolor=ft.Colors.WHITE,
-        border_radius=5,
+        border_radius=3,
         border=ft.border.all(1, ft.Colors.ORANGE_200)
     )
 
