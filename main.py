@@ -1,28 +1,23 @@
 import flet as ft
 from datetime import datetime, timedelta
 from src.state import state
-from src.database import load_data #for Cloud use src.database for window pc use src.local_database
+from src.database import load_data
 from views.asrs_logs_view import create_data_table_view as create_asrs_logs_view
 from views.statistics_view import create_statistics_view
 from views.login_view import create_login_view
 from views.chart_view import create_chart_view
 from views.before_alm_view import create_before_alarm_view
-from src.ui_components import on_date_change
+from src.ui_components import on_date_change, on_end_date_change
 import threading
 
 # Initialize state variables
-<<<<<<< HEAD
-state['start_date'] = datetime.now()
-state['end_date'] = state['start_date'] + timedelta(days=1)  # Default end date is one day after selected date
-=======
 state['selected_date'] = datetime.now()
->>>>>>> parent of 0f2bd63 (big change for customer await the export excel function)
+state['end_date'] = state['selected_date'] + timedelta(days=1)  # Default end date is one day after selected date
 state['logged_in'] = False
 
 def update_view(page, tab_name=None):
-    # Update date display text
     if hasattr(page, 'start_date_text') and page.start_date_text:
-        page.start_date_text.value = f"Start: {state['start_date'].strftime('%Y-%m-%d')}"
+        page.start_date_text.value = f"Start: {state['selected_date'].strftime('%Y-%m-%d')}"
     
     if hasattr(page, 'end_date_text') and page.end_date_text:
         end_date_str = state['end_date'].strftime('%Y-%m-%d') if state.get('end_date') else "Not set"
@@ -58,11 +53,7 @@ def load_data_async(page):
     page.splash.visible = True
     page.update()
 
-<<<<<<< HEAD
-    load_data(start_date=state['start_date'], end_date=state['end_date'])
-=======
-    load_data(start_date=state['selected_date'], end_date=state['selected_date'] + timedelta(days=1))
->>>>>>> parent of 0f2bd63 (big change for customer await the export excel function)
+    load_data(start_date=state['selected_date'], end_date=state['end_date'])
     
     page.splash.visible = False
     
@@ -148,7 +139,7 @@ def on_route_change(route, page):
             on_change=lambda e: on_tab_change(e, page),
             expand=True
         )
-        page.tabs_control = tabs_control
+        page.tabs_control = tabs_control  
         
         def logout(e):
             state['logged_in'] = False
@@ -187,37 +178,28 @@ def main(page):
     page.theme_mode = ft.ThemeMode.LIGHT
     
     # Create loading indicator
-    page.splash = ft.ProgressRing(width=100, height=100, stroke_width=5)
-    page.overlay.append(page.splash)
-    page.splash.visible = False
-    
-    # Create date display texts
-    page.start_date_text = ft.Text(f"Start: {state['start_date'].strftime('%Y-%m-%d')}", size=14)
+    page.splash = ft.ProgressRing(width=100, height=100, stroke_width=5)  
+    page.overlay.append(page.splash)  
+    page.splash.visible = False  
+    page.start_date_text = ft.Text(f"Start: {state['selected_date'].strftime('%Y-%m-%d')}", size=14)
     page.end_date_text = ft.Text(f"End: {state['end_date'].strftime('%Y-%m-%d') if state.get('end_date') else 'Not set'}", size=14)
-    
+        
     # Setup date picker
-    page.date_picker = ft.DatePicker(
+    page.date_picker = ft.DatePicker(  
         first_date=datetime(2020, 1, 1),
         last_date=datetime(2030, 12, 31),
         on_change=lambda e: on_date_change(e, page)
     )
-    page.overlay.append(page.date_picker)
+    page.overlay.append(page.date_picker)  
     
-<<<<<<< HEAD
-    page.end_date_picker = ft.DatePicker(
+    page.end_date_picker = ft.DatePicker(  
         first_date=datetime(2020, 1, 1),
         last_date=datetime(2030, 12, 31),
         on_change=lambda e: on_end_date_change(e, page)
     )
-    page.overlay.append(page.end_date_picker)
-    
-=======
->>>>>>> parent of 0f2bd63 (big change for customer await the export excel function)
-    # Set up routing
+    page.overlay.append(page.end_date_picker)  
     page.on_route_change = lambda route: on_route_change(route, page)
-    
-    # Start with login page
     page.go("/login")
 
 if __name__ == "__main__":
-    ft.app(main,ft.WEB_BROWSER, host="0.0.0.0", port=7777)
+    ft.app(target=main, view=ft.AppView.WEB_BROWSER, host="0.0.0.0", port=7777)  

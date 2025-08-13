@@ -8,7 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.state import state
 from src.filters import get_status_stats, apply_filters
-from src.ui_components import create_filter_controls
+from src.ui_components import create_filter_controls # type: ignore
 
 from views.Status_Detail import Alarm_status_map, Normal_status_map , ALARM_CATEGORIES , CATEGORY_COLORS
 
@@ -17,8 +17,10 @@ table_height = 500
 cells_width = 180
 else_width = 70
 
+stats_cache = {'logs_stats': None, 'alarm_df': None, 'before_alarm_df': None, 'filter_state': None}
+
 def create_task_progress_gauge():
-    logs_stats, total = get_status_stats(state['df_logs'], state['line_logs'], state['start_date'])
+    logs_stats, total = get_status_stats(state['df_logs'], state['line_logs'], state['selected_date'])
     
     if total == 0:
         return ft.Container(
@@ -56,7 +58,7 @@ def create_task_progress_gauge():
     )
 
 def create_before_alarm_view(page):
-    filter_controls = create_filter_controls(page=page, table_type=None, show_status=False, show_refresh=True)
+    filter_controls = create_filter_controls(page=page, show_status=False)
     loading_view = ft.Column([
         ft.Container(
             content=ft.Column([
@@ -74,20 +76,45 @@ def create_before_alarm_view(page):
     
     def load_data_async():
         time.sleep(0.1)
+        # Create a simple tuple for comparison
+        current_filter_state = (str(state['line_logs']), state['selected_date'].strftime("%Y-%m-%d") if hasattr(state['selected_date'], 'strftime') else str(state['selected_date']))
+        
+        # Safe comparison - check if filter state has changed or if cache is empty
+        should_reload = (stats_cache['filter_state'] is None or 
+                         stats_cache['filter_state'] != current_filter_state or 
+                         stats_cache['logs_stats'] is None)
+        
+        if should_reload:
+            try:
+                logs_stats, _ = get_status_stats(state['df_logs'], state['line_logs'], state['selected_date'])
+                logs_stats = logs_stats[logs_stats['PLCCODE'] > 100] if len(logs_stats) > 0 else logs_stats
+                alarm_df, before_alarm_df = process_alarm_data()
+                
+                stats_cache.update({
+                    'logs_stats': logs_stats,
+                    'alarm_df': alarm_df,
+                    'before_alarm_df': before_alarm_df,
+                    'filter_state': current_filter_state
+                }) # type: ignore
+            except Exception as e:
+                print(f"Error loading statistics data: {e}")
+                # Fallback to empty DataFrames if there's an error
+                stats_cache.update({
+                    'logs_stats': pd.DataFrame(),
+                    'alarm_df': pd.DataFrame(),
+                    'before_alarm_df': pd.DataFrame(),
+                    'filter_state': current_filter_state
+                }) # type: ignore
         
         try:
-            logs_stats, _ = get_status_stats(state['df_logs'], state['line_logs'], state['start_date'])
-            logs_stats = logs_stats[logs_stats['PLCCODE'] > 100] if len(logs_stats) > 0 else logs_stats
-            
-            alarm_df, before_alarm_df = process_alarm_data()
-            
             task_gauge = create_task_progress_gauge()
-            main_content = create_pre_alarm_table(before_alarm_df)
+            # Modified to only show the pre-alarm table
+            main_content = create_pre_alarm_table(stats_cache['before_alarm_df'])
             
             main_container.content = ft.Column([filter_controls, task_gauge, main_content], expand=True)
             page.update()
         except Exception as e:
-            print(f"Error loading or updating statistics view: {e}")
+            print(f"Error updating statistics view: {e}")
             # Show error message in UI
             error_content = ft.Column([
                 filter_controls,
@@ -108,71 +135,48 @@ def create_before_alarm_view(page):
 def process_alarm_data():
     df = state['df_logs']
     if df is None or len(df) == 0:
-        print("No data in df_logs")
         return pd.DataFrame(), pd.DataFrame()
     
-    filtered_df = apply_filters(df, state['line_logs'], "All", state['start_date'], "ASRS_Logs")
-    print(f"Filtered data: {len(filtered_df)} rows")
-    
-    # Check if PLCCODE column exists
-    if 'PLCCODE' not in filtered_df.columns:
-        print("PLCCODE column not found in filtered data")
-        return pd.DataFrame(), pd.DataFrame()
-    
-    # Get alarm data (PLCCODE > 100)
-    alarm_df = filtered_df[filtered_df['PLCCODE'] > 100].copy()
-    print(f"Alarm data: {len(alarm_df)} rows")
+    filtered_df = apply_filters(df, state['line_logs'], "All", state['selected_date'], "ASRS_Logs")
+    alarm_df = filtered_df[filtered_df['PLCCODE'] > 100] if 'PLCCODE' in filtered_df.columns else pd.DataFrame()
     
     if len(alarm_df) == 0:
-        print("No alarm data found")
         return alarm_df, pd.DataFrame()
     
-    # Sort the dataframes by timestamp
     alarm_df = alarm_df.sort_values('CDATE', ascending=False)
+    before_alarm_rows = []
     sorted_df = filtered_df.sort_values('CDATE')
     
-    before_alarm_rows = []
-    
-    # Process each alarm to find the previous normal status
     for _, alarm_row in alarm_df.iterrows():
-        try:
-            line_value = alarm_row['ASRS']
-            alarm_time = alarm_row['CDATE']
+        line_value = alarm_row['ASRS']
+        alarm_time = alarm_row['CDATE']
+        previous_rows = sorted_df[
+            (sorted_df['ASRS'] == line_value) & 
+            (sorted_df['CDATE'] < alarm_time) &
+            (sorted_df['PLCCODE'] < 100)
+        ]
+        
+        if len(previous_rows) > 0:
+            previous_row = previous_rows.iloc[-1]
+            previous_row = previous_row.copy()
+            previous_row['Alarm'] = alarm_row['PLCCODE']
+            previous_row['AlarmTime'] = alarm_row['CDATE']
             
-            # Find all normal status entries (PLCCODE < 100) before this alarm for the same line
-            previous_rows = sorted_df[
-                (sorted_df['ASRS'] == line_value) & 
-                (sorted_df['CDATE'] < alarm_time) &
-                (sorted_df['PLCCODE'] < 100)
-            ]
+            if isinstance(previous_row['CDATE'], pd.Timestamp) and isinstance(alarm_row['CDATE'], pd.Timestamp):
+                duration_seconds = (alarm_row['CDATE'] - previous_row['CDATE']).total_seconds()
+                previous_row['Duration'] = f"{int(duration_seconds)}"
+            else:
+                previous_row['Duration'] = "Unknown"
             
-            if len(previous_rows) > 0:
-                # Get the most recent normal status before the alarm
-                previous_row = previous_rows.iloc[-1].copy()
-                previous_row['Alarm'] = alarm_row['PLCCODE']
-                previous_row['AlarmTime'] = alarm_row['CDATE']
-                
-                # Calculate duration between normal status and alarm
-                if isinstance(previous_row['CDATE'], pd.Timestamp) and isinstance(alarm_row['CDATE'], pd.Timestamp):
-                    duration_seconds = (alarm_row['CDATE'] - previous_row['CDATE']).total_seconds()
-                    previous_row['Duration'] = f"{int(duration_seconds)}"
-                else:
-                    previous_row['Duration'] = "Unknown"
-                
-                before_alarm_rows.append(previous_row)
-        except Exception as e:
-            print(f"Error processing alarm row: {e}")
-            continue
-    
-    print(f"Found {len(before_alarm_rows)} pre-alarm events")
+            before_alarm_rows.append(previous_row)
     
     if before_alarm_rows:
         before_alarm_df = pd.DataFrame(before_alarm_rows)
         before_alarm_df = before_alarm_df.sort_values('CDATE', ascending=False)
-        return alarm_df, before_alarm_df
     else:
-        print("No pre-alarm rows found despite having alarms")
-        return alarm_df, pd.DataFrame()
+        before_alarm_df = pd.DataFrame()
+    
+    return alarm_df, before_alarm_df
 
 def create_container_with_header(title, content, height):
     return ft.Container(
@@ -193,7 +197,7 @@ def create_container_with_header(title, content, height):
     )
 
 def create_pre_alarm_table(before_alarm_df):
-    if before_alarm_df is None or len(before_alarm_df) == 0:
+    if len(before_alarm_df) == 0:
         content = ft.Text("No Pre-Alarm Data Found", text_align=ft.TextAlign.CENTER, size=16, color=ft.Colors.BLUE_300)
         return create_container_with_header("เหตุการ์ณก่อนเกิด Alarm", content, table_height)
     
