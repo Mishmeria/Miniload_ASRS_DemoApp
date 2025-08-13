@@ -2,17 +2,13 @@
 
 # Global state
 state = {
-    'page_loops': 0,
     'page_logs': 0,
     'rows_per_page': 100,
-    'line_loops': "All",
     'line_logs': "All", 
-    'status_loops': "All",
     'status_logs': "All",
-    'selected_date': None,
-    'df_loops': None,
+    'start_date': None,
+    'end_date' : None,
     'df_logs': None,
-    'time_filter_active': False,
     'filter_choice': "All"
 }
 

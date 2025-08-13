@@ -249,7 +249,7 @@ def create_data_table_view(page):
     status_filter = state['status_logs']
     filter_choice = state.get('filter_choice', 'All')
 
-    filtered_df = apply_filters(df, line_filter, status_filter, state['selected_date'], "Logs")
+    filtered_df = apply_filters(df, line_filter, status_filter, state['start_date'], "Logs")
     filtered_df = filter_data_by_type(filtered_df, filter_choice)
 
     total_pages = max(1, (len(filtered_df) + state['rows_per_page'] - 1) // state['rows_per_page'])

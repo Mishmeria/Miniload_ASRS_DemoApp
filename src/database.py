@@ -69,8 +69,8 @@ def load_data(start_date=None, end_date=None):
             'start_date': start_date.strftime('%Y-%m-%d'),
             'end_date': end_date.strftime('%Y-%m-%d')
         }
-    elif 'selected_date' in state and state['selected_date']:
-        sd = state['selected_date']
+    elif 'start_date' in state and state['start_date']:
+        sd = state['start_date']
         date_filter = {
             'start_date': sd.strftime('%Y-%m-%d'),
             'end_date': (sd + timedelta(days=1)).strftime('%Y-%m-%d')

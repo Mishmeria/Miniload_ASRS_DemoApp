@@ -14,11 +14,13 @@ from src.ui_components import create_filter_controls ,filter_data_by_type
 from views.Status_Detail import Alarm_status_map, Normal_status_map, ALARM_CATEGORIES, CATEGORY_COLORS
 
 def create_chart_view(page):
-    df = state['df_logs']
-    line_filter = state['line_logs']
-    status_filter = state['status_logs']
+    df = state.get('df_logs')
+    line_filter = state.get('line_logs', 'All')
+    status_filter = state.get('status_logs', 'All')
     filter_choice = state.get('filter_choice', 'All')
-    filtered_df = apply_filters(df, line_filter, status_filter, state['selected_date'], "Logs")
+    
+    # Continue with normal processing if data is available
+    filtered_df = apply_filters(df, line_filter, status_filter, state['start_date'], "Logs")
     filtered_df = filter_data_by_type(filtered_df, filter_choice)
 
     filter_controls = create_filter_controls(
@@ -26,6 +28,34 @@ def create_chart_view(page):
         show_status=True
     )
     
+    # Check if df is None or empty
+    if df is None or (isinstance(df, pd.DataFrame) and df.empty):
+        filter_controls = create_filter_controls(
+            page=page,
+            show_status=True
+        )
+        
+        no_data_message = ft.Container(
+            content=ft.Column([
+                ft.Text("No data available. Please check your connection or try a different date range.", 
+                       size=16, color=ft.Colors.GREY_700, text_align=ft.TextAlign.CENTER)
+            ]),
+            alignment=ft.alignment.center,
+            expand=True,
+            padding=20,
+            bgcolor=ft.Colors.WHITE,
+            border_radius=3,
+            border=ft.border.all(1, ft.Colors.ORANGE_200)
+        )
+        
+        return ft.Container(
+            content=ft.Column([
+                filter_controls,
+                no_data_message
+            ]), 
+            padding=5,
+            expand=True
+        )
     # Create status frequency chart
     def create_status_frequency_chart():
         if filtered_df.empty:
@@ -35,14 +65,18 @@ def create_chart_view(page):
         status_counts = filtered_df['PLCCODE'].value_counts().reset_index()
         status_counts.columns = ['PLCCODE', 'Count']
         status_counts = status_counts.sort_values('Count', ascending=False)
-        
+
+        total_count = status_counts['Count'].sum()
+        start_date = state['start_date'].strftime('%Y-%m-%d')
+        end_date = state['end_date'].strftime('%Y-%m-%d')
+
         max_count = status_counts['Count'].max()
         chart_height = 470  # Fixed chart area height
         
         # Chart Title
         chart_title = ft.Container(
             content=ft.Text(
-                "กราฟการเกิด Status ในแต่ละวัน",
+                f"กราฟแสดงข้อมูลตั้งแต่วันที่ {start_date} ถึงวันที่ {end_date} จำนวน {total_count} แถว",
                 size=20,
                 weight=ft.FontWeight.BOLD,
                 color=ft.Colors.BLUE_800,
@@ -111,7 +145,7 @@ def create_chart_view(page):
         # Create bars with x-axis labels combined in single containers
         bar_containers = []
         
-        for i, row in status_counts.iterrows():
+        for i, (_, row) in enumerate(status_counts.iterrows()):
             status_code = row['PLCCODE']
             count = row['Count']
             

@@ -3,6 +3,10 @@ from datetime import datetime, timedelta
 from src.state import state
 
 def apply_filters(df, line_filter, status_filter, date_filter, table_type):
+    if df is None or not isinstance(df, pd.DataFrame):
+        print("Warning: No DataFrame provided to apply_filters, returning empty DataFrame")
+        return pd.DataFrame()
+    
     filtered_df = df.copy()
 
     # SRM/LINE
@@ -23,12 +27,12 @@ def apply_filters(df, line_filter, status_filter, date_filter, table_type):
             except ValueError:
                 filtered_df = filtered_df[filtered_df["PLCCODE"].astype(str) == status_filter]
 
-    # NEW: Date-range filter (uses state.selected_date and state.end_date)
+    # NEW: Date-range filter (uses state.start_date and state.end_date)
     if 'CDATE' in filtered_df.columns:
         if not pd.api.types.is_datetime64_any_dtype(filtered_df['CDATE']):
             filtered_df['CDATE'] = pd.to_datetime(filtered_df['CDATE'], errors='coerce')
 
-        start_date = state.get('selected_date')
+        start_date = state.get('start_date')
         end_date = state.get('end_date') or start_date  # if end is None, single-day
         
         if start_date:
@@ -57,7 +61,7 @@ def get_status_stats(df, line_filter="All", selected_date=None):
 
 def calculate_line_alarm_frequency():
     df = state['df_logs']
-    filtered_df = apply_filters(df, state['line_logs'], "All", state['selected_date'], "Logs")
+    filtered_df = apply_filters(df, state['line_logs'], "All", state['start_date'], "Logs")
     alarm_df = filtered_df[filtered_df['PLCCODE'] > 100].copy()
 
     if len(alarm_df) == 0:

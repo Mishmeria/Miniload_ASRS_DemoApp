@@ -2,11 +2,12 @@ import flet as ft
 import pandas as pd
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import threading
+import io, base64, re
 from datetime import datetime, timedelta
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.state import state
-from src.filters import apply_filters, get_status_stats
-from views.Status_Detail import ALARM_CATEGORIES, CATEGORY_COLORS , Alarm_status_map, Normal_status_map
+from src.filters import apply_filters
 
 def create_dropdown(label, value, options, width, on_change):
     return ft.Dropdown(
@@ -62,32 +63,61 @@ def filter_data_by_type(df, filter_type):
         return df
 
 # ---------- New helpers for date "chips" ----------
-def _date_chip(label: str, value: datetime | None, on_tap):
+def _date_chip(label: str, value: datetime | None, on_tap, text_control=None):
+    """Create a date chip with a calendar icon button and text showing the selected date"""
     txt = value.strftime('%Y-%m-%d') if value else 'Select'
-    return ft.Container(
-        content=ft.Row([
-            ft.Icon(ft.Icons.CALENDAR_MONTH, size=18),
-            ft.Text(f"{label}: {txt}", size=14, weight=ft.FontWeight.W_500),
-        ], spacing=6, alignment=ft.MainAxisAlignment.CENTER),
-        padding=ft.padding.symmetric(horizontal=12, vertical=8),
-        bgcolor=ft.Colors.BLUE_50,
-        border=ft.border.all(1, ft.Colors.BLUE_200),
-        border_radius=8,
-        on_click=on_tap
-    )
+    
+    if text_control:
+        text_display = text_control
+    else:
+        text_display = ft.Text(f"{label}: {txt}", size=14, weight=ft.FontWeight.W_500)
+    
+    return ft.Row([
+        text_display,
+        ft.IconButton(
+            icon=ft.Icons.CALENDAR_MONTH,
+            tooltip=f"Select {label.lower()} date",
+            on_click=on_tap
+        )
+    ], spacing=8, alignment=ft.MainAxisAlignment.CENTER)
+
+def export_to_excel(page):
+    df = state.get("df_logs")
+    if df is None or df.empty:
+        page.snack_bar = ft.SnackBar(ft.Text("ไม่พบข้อมูลใน state['df_logs']"))
+        page.snack_bar.open = True
+        page.update()
+        return
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="Logs")
+        ws = writer.sheets["Logs"]
+        ws.autofilter(0, 0, len(df), len(df.columns)-1)
+        ws.freeze_panes(1, 0)
+        for i, col in enumerate(df.columns):
+            try:
+                avg_len = int(df[col].astype(str).str.len().mean())
+            except Exception:
+                avg_len = 10
+            ws.set_column(i, i, min(40, max(10, avg_len + 4)))
+    buf.seek(0)
+
+    b64 = base64.b64encode(buf.read()).decode("utf-8")
+    data_url = "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64," + b64
+    page.launch_url(data_url)
 
 def create_filter_controls(page, show_status=True):
     if 'filter_choice' not in state:
         state['filter_choice'] = "All"
     if 'end_date' not in state:
-        state['end_date'] = None  # defaults to single-day until user picks end date
+        state['end_date'] = None 
 
     line_filter = state['line_logs']
     status_filter = state['status_logs']
     filter_choice = state['filter_choice']
     status_choices = get_unique_statuses(filter_choice)
 
-    # Left section
     left_controls = []
     left_controls.append(
         create_dropdown(
@@ -118,10 +148,11 @@ def create_filter_controls(page, show_status=True):
             )
         )
 
-    # Center section: clickable chips + Apply (no extra text underneath)
     center_controls = ft.Row([
-        _date_chip("Start", state.get('selected_date'), lambda e: page.open(page.date_picker)),
-        _date_chip("End", state.get('end_date'), lambda e: page.open(page.end_date_picker)),
+        _date_chip("Start", state.get('start_date'), lambda e: page.open(page.date_picker), 
+                  text_control=getattr(page, 'start_date_text', None)),
+        _date_chip("End", state.get('end_date'), lambda e: page.open(page.end_date_picker),
+                  text_control=getattr(page, 'end_date_text', None)),
         create_button(
             "ค้นหา",
             ft.Icons.SEARCH,
@@ -132,7 +163,6 @@ def create_filter_controls(page, show_status=True):
         ),
     ], alignment=ft.MainAxisAlignment.CENTER, spacing=12)
 
-    # Right section
     right_controls = []
     
     right_controls.append(
@@ -141,6 +171,16 @@ def create_filter_controls(page, show_status=True):
             ft.Icons.CLEAR,
             lambda e: clear_filter(e, page),
             bgcolor=ft.Colors.ORANGE_600,
+            color=ft.Colors.WHITE
+        )
+    )
+
+    right_controls.append(
+        create_button(
+            "Excel",
+            ft.Icons.DOWNLOAD,
+            lambda e: export_to_excel(page),
+            bgcolor=ft.Colors.GREEN,
             color=ft.Colors.WHITE
         )
     )
@@ -172,42 +212,38 @@ def on_status_filter_change(e, page):
     update_view(page)
 
 def on_date_change(e, page):
-    # Only store; don't load yet (Apply button will load)
-    state['selected_date'] = e.control.value
-    state['page_loops'] = 0
-    state['page_logs'] = 0
-    # If end_date is empty, default to same day for UI clarity
+    state['start_date'] = e.control.value
     if not state.get('end_date'):
-        state['end_date'] = state['selected_date']
-    from main import update_view
-    update_view(page)
+        state['end_date'] = state['start_date']
+    
+    if hasattr(page, 'start_date_text') and page.start_date_text:
+        page.start_date_text.value = f"Start: {state['start_date'].strftime('%Y-%m-%d')}"
+        page.update()
 
 def on_end_date_change(e, page):
-    # Only store; don't load yet (Apply button will load)
     state['end_date'] = e.control.value
-    state['page_loops'] = 0
-    state['page_logs'] = 0
-    # If start not set yet, mirror it
-    if not state.get('selected_date'):
-        state['selected_date'] = state['end_date']
-    from main import update_view
-    update_view(page)
+    
+    if not state.get('start_date'):
+        state['start_date'] = state['end_date']
+    
+    if hasattr(page, 'end_date_text') and page.end_date_text:
+        page.end_date_text.value = f"End: {state['end_date'].strftime('%Y-%m-%d')}"
+        page.update()
 
 def apply_date_range(e, page):
     page.splash.visible = True
     page.update()
     try:
         from src.database import load_data
-        start = state.get('selected_date')
+        start = state.get('start_date')
         end = state.get('end_date') or start
         if not start:
-            # no start date chosen; just hide splash and bail
             page.splash.visible = False
             page.snack_bar = ft.SnackBar(ft.Text("Please select a start date."))
             page.snack_bar.open = True
             page.update()
             return
-        # load [start, end + 1d)
+
         load_data(start_date=start, end_date=end + timedelta(days=1))  # type: ignore
         state['page_logs'] = 0
         from main import update_view
@@ -228,7 +264,6 @@ def clear_filter(e, page):
     state['line_logs'] = "All"
     state['status_logs'] = "All"
     state['filter_choice'] = "All"
-    # Keep selected_date; clear end_date so it becomes single-day again
     state['end_date'] = None
     from main import update_view
     update_view(page)
@@ -254,7 +289,7 @@ def refresh_data(e, page):
         state['status_logs'] = "All"
         state['filter_choice'] = "All"
         from src.database import load_data
-        start = state.get('selected_date')
+        start = state.get('start_date')
         if start:
             end = state.get('end_date') or start
             load_data(start_date=start, end_date=end + timedelta(days=1))

@@ -11,11 +11,19 @@ from src.ui_components import on_date_change, on_end_date_change
 import threading
 
 # Initialize state variables
-state['selected_date'] = datetime.now()
-state['end_date'] = state['selected_date'] + timedelta(days=1)  # Default end date is one day after selected date
+state['start_date'] = datetime.now()
+state['end_date'] = state['start_date'] + timedelta(days=1)  # Default end date is one day after selected date
 state['logged_in'] = False
 
 def update_view(page, tab_name=None):
+    # Update date display text
+    if hasattr(page, 'start_date_text') and page.start_date_text:
+        page.start_date_text.value = f"Start: {state['start_date'].strftime('%Y-%m-%d')}"
+    
+    if hasattr(page, 'end_date_text') and page.end_date_text:
+        end_date_str = state['end_date'].strftime('%Y-%m-%d') if state.get('end_date') else "Not set"
+        page.end_date_text.value = f"End: {end_date_str}"
+    
     if tab_name is None or tab_name == "รายละเอียด":
         page.tabs["รายละเอียด"].content = ft.Container(
             content=create_asrs_logs_view(page), 
@@ -46,7 +54,7 @@ def load_data_async(page):
     page.splash.visible = True
     page.update()
 
-    load_data(start_date=state['selected_date'], end_date=state['end_date'])
+    load_data(start_date=state['start_date'], end_date=state['end_date'])
     
     page.splash.visible = False
     
@@ -122,7 +130,7 @@ def on_route_change(route, page):
             "ก่อนเกิด Alarm": tab_before_alarm,
             "สรุป Alarm": tab_summary, 
             "รายละเอียด": tab_details
-        }  # type: ignore
+        }  
     
         tabs_control = ft.Tabs(
             selected_index=0, 
@@ -132,7 +140,7 @@ def on_route_change(route, page):
             on_change=lambda e: on_tab_change(e, page),
             expand=True
         )
-        page.tabs_control = tabs_control  # type: ignore
+        page.tabs_control = tabs_control
         
         def logout(e):
             state['logged_in'] = False
@@ -166,29 +174,34 @@ def on_route_change(route, page):
 
     page.update()
 
-def main(page: ft.Page):
+def main(page):
     page.title = "ASRS Miniload Dashboard"
     page.theme_mode = ft.ThemeMode.LIGHT
     
     # Create loading indicator
-    page.splash = ft.ProgressRing(width=100, height=100, stroke_width=5)  # type: ignore
-    page.overlay.append(page.splash)  # type: ignore
-    page.splash.visible = False  # type: ignore
+    page.splash = ft.ProgressRing(width=100, height=100, stroke_width=5)
+    page.overlay.append(page.splash)
+    page.splash.visible = False
+    
+    # Create date display texts
+    page.start_date_text = ft.Text(f"Start: {state['start_date'].strftime('%Y-%m-%d')}", size=14)
+    page.end_date_text = ft.Text(f"End: {state['end_date'].strftime('%Y-%m-%d') if state.get('end_date') else 'Not set'}", size=14)
     
     # Setup date picker
-    page.date_picker = ft.DatePicker(  # type: ignore
+    page.date_picker = ft.DatePicker(
         first_date=datetime(2020, 1, 1),
         last_date=datetime(2030, 12, 31),
         on_change=lambda e: on_date_change(e, page)
     )
-    page.overlay.append(page.date_picker)  # type: ignore
+    page.overlay.append(page.date_picker)
     
-    page.end_date_picker = ft.DatePicker(  # type: ignore
+    page.end_date_picker = ft.DatePicker(
         first_date=datetime(2020, 1, 1),
         last_date=datetime(2030, 12, 31),
         on_change=lambda e: on_end_date_change(e, page)
     )
-    page.overlay.append(page.end_date_picker)  # type: ignore
+    page.overlay.append(page.end_date_picker)
+    
     # Set up routing
     page.on_route_change = lambda route: on_route_change(route, page)
     
@@ -196,4 +209,4 @@ def main(page: ft.Page):
     page.go("/login")
 
 if __name__ == "__main__":
-    ft.app(target=main, view=ft.WEB_BROWSER, host="0.0.0.0", port=7777)  # type: ignore
+    ft.app(main,ft.WEB_BROWSER, host="0.0.0.0", port=7777)
