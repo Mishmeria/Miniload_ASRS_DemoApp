@@ -25,7 +25,9 @@ def create_chart_view(page):
 
     filter_controls = create_filter_controls(
         page=page,
-        show_status=True
+        table_type="ASRS_Logs",
+        show_status=True,
+        show_refresh=True
     )
     
     # Check if df is None or empty
@@ -306,7 +308,7 @@ def create_chart_view(page):
         expand=True,
         padding=20,
         bgcolor=ft.Colors.WHITE,
-        border_radius=3,
+        border_radius=5,
         border=ft.border.all(1, ft.Colors.ORANGE_200)
     )
 
