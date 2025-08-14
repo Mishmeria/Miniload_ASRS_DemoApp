@@ -17,7 +17,6 @@ dill==0.4.0
 distorm3==3.5.2
 dl==0.1.0
 docrepr==0.2.0
-fastapi==0.116.1
 flet==0.28.3
 gevent==25.5.1
 gobject==0.1.0
@@ -64,7 +63,6 @@ testpath==0.6.0
 trio==0.30.0
 trove_classifiers==2025.8.6.13
 urllib3_secure_extra==0.1.0
-uvicorn==0.35.0
 wmi==1.5.1
 xmlrpclib==1.0.1
 yapf==0.43.0
