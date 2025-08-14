@@ -1,31 +1,27 @@
-FROM python:3.10-slim-bullseye
+# was: FROM python:3.10-slim-bullseye
+FROM python:3.11-slim-bullseye
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies, ODBC drivers, and network tools for troubleshooting
+# (keep the rest of your Dockerfile exactly as you had it)
+# ODBC + tools
 RUN apt-get update && \
-    apt-get install -y \
-    curl gnupg2 lsb-release apt-transport-https \
-    gcc g++ make unixodbc-dev \
-    iputils-ping net-tools iproute2 traceroute && \
-    curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft.gpg && \
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list && \
-    apt-get update && \
-    ACCEPT_EULA=Y apt-get install -y msodbcsql17 && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends \
+      curl gnupg2 lsb-release apt-transport-https \
+      unixodbc-dev \
+      iputils-ping net-tools iproute2 traceroute \
+    && curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y msodbcsql17 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file first for better caching
 COPY requirements.txt .
+ENV PIP_ROOT_USER_ACTION=ignore
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+ && pip --version \
+ && pip install --no-cache-dir -r requirements.txt
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy all project files
 COPY . .
-
-# Expose the port your application uses
 EXPOSE 7777
-
-# Run the Python script
 CMD ["python", "main.py"]
