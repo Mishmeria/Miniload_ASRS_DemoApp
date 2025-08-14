@@ -17,7 +17,9 @@ table_height = 500
 cells_width = 180
 else_width = 70
 
-stats_cache = {'logs_stats': None, 'alarm_df': None, 'before_alarm_df': None, 'filter_state': None}
+# Add pagination state to the cache
+stats_cache = {'logs_stats': None, 'alarm_df': None, 'before_alarm_df': None, 'filter_state': None, 'current_page': 0}
+rows_per_page = 10  # Number of rows to display per page
 
 def create_task_progress_gauge():
     logs_stats, total = get_status_stats(state['df_logs'], state['line_logs'], state['selected_date'])
@@ -94,7 +96,8 @@ def create_before_alarm_view(page):
                     'logs_stats': logs_stats,
                     'alarm_df': alarm_df,
                     'before_alarm_df': before_alarm_df,
-                    'filter_state': current_filter_state
+                    'filter_state': current_filter_state,
+                    'current_page': 0  # Reset to first page when data changes
                 }) # type: ignore
             except Exception as e:
                 print(f"Error loading statistics data: {e}")
@@ -103,13 +106,14 @@ def create_before_alarm_view(page):
                     'logs_stats': pd.DataFrame(),
                     'alarm_df': pd.DataFrame(),
                     'before_alarm_df': pd.DataFrame(),
-                    'filter_state': current_filter_state
+                    'filter_state': current_filter_state,
+                    'current_page': 0
                 }) # type: ignore
         
         try:
             task_gauge = create_task_progress_gauge()
-            # Modified to only show the pre-alarm table
-            main_content = create_pre_alarm_table(stats_cache['before_alarm_df'])
+            # Modified to only show the pre-alarm table with pagination
+            main_content = create_pre_alarm_table(stats_cache['before_alarm_df'], page)
             
             main_container.content = ft.Column([filter_controls, task_gauge, main_content], expand=True)
             page.update()
@@ -137,7 +141,7 @@ def process_alarm_data():
     if df is None or len(df) == 0:
         return pd.DataFrame(), pd.DataFrame()
     
-    filtered_df = apply_filters(df, state['line_logs'], "All", state['selected_date'], "ASRS_Logs")
+    filtered_df = apply_filters(df, state['line_logs'], "All")
     alarm_df = filtered_df[filtered_df['PLCCODE'] > 100] if 'PLCCODE' in filtered_df.columns else pd.DataFrame()
     
     if len(alarm_df) == 0:
@@ -196,7 +200,26 @@ def create_container_with_header(title, content, height):
         shadow=ft.BoxShadow(spread_radius=1, blur_radius=5, color=ft.Colors.with_opacity(0.3, ft.Colors.GREY_800), offset=ft.Offset(0, 2))
     )
 
-def create_pre_alarm_table(before_alarm_df):
+# Function to handle page change
+def on_page_change(e, page):
+    stats_cache['current_page'] = int(e.control.value)
+    page.update()
+    
+    # Reload the table with the new page
+    task_gauge = create_task_progress_gauge()
+    filter_controls = create_filter_controls(page=page, show_status=False)
+    main_content = create_pre_alarm_table(stats_cache['before_alarm_df'], page)
+    
+    # Find the main container and update it
+    for control in page.controls:
+        if isinstance(control, ft.Tabs):
+            for tab in control.tabs:
+                if tab.text == "ก่อนเกิด Alarm":
+                    tab.content = ft.Column([filter_controls, task_gauge, main_content], expand=True)
+                    break
+    page.update()
+
+def create_pre_alarm_table(before_alarm_df, page):
     if len(before_alarm_df) == 0:
         content = ft.Text("No Pre-Alarm Data Found", text_align=ft.TextAlign.CENTER, size=16, color=ft.Colors.BLUE_300)
         return create_container_with_header("เหตุการ์ณก่อนเกิด Alarm", content, table_height)
@@ -230,6 +253,49 @@ def create_pre_alarm_table(before_alarm_df):
     # Select only the available columns in the desired order
     display_df = display_df[available_cols]
     
+    # Calculate total pages and implement pagination
+    total_rows = len(display_df)
+    total_pages = max(1, (total_rows + rows_per_page - 1) // rows_per_page)
+    current_page = stats_cache['current_page']
+    
+    # Ensure current page is valid
+    current_page = min(current_page, total_pages - 1)
+    current_page = max(0, current_page)
+    stats_cache['current_page'] = current_page
+    
+    # Calculate start and end indices for the current page
+    start_idx = current_page * rows_per_page
+    end_idx = min(start_idx + rows_per_page, total_rows)
+    
+    # Get the subset of data for the current page
+    page_df = display_df.iloc[start_idx:end_idx]
+    
+    # Create page dropdown options
+    page_options = [
+        ft.dropdown.Option(key=str(i), text=f"{i+1}")
+        for i in range(total_pages)
+    ]
+    
+    # Create page dropdown
+    page_dropdown = ft.Dropdown(
+        options=page_options,
+        value=str(current_page),
+        width=100,
+        on_change=lambda e: on_page_change(e, page),
+    )
+    
+    # Create pagination controls
+    pagination_controls = ft.Row(
+        [
+            ft.Row([
+                ft.Text("หน้าที่: ", size=16),
+                page_dropdown,
+                ft.Text(f" แสดงข้อมูลแถวที่ {start_idx + 1} ถึงแถวที่ {end_idx} จากทั้งหมด {total_rows} แถว", size=16),
+            ])
+        ],
+        alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+    )
+    
     # INCREASED column widths to make table wider
     column_widths = {
         'ASRS': 80,
@@ -246,7 +312,7 @@ def create_pre_alarm_table(before_alarm_df):
     }
     
     # Calculate total table width
-    total_width = sum(column_widths.get(col, 100) for col in display_df.columns)
+    total_width = sum(column_widths.get(col, 100) for col in page_df.columns)
     
     # Column display names mapping
     column_display_names = {
@@ -260,7 +326,7 @@ def create_pre_alarm_table(before_alarm_df):
     
     # Create header cells
     header_cells = []
-    for col in display_df.columns:
+    for col in page_df.columns:
         display_name = column_display_names.get(col, col)
         width = column_widths.get(col, 100)
         
@@ -283,7 +349,7 @@ def create_pre_alarm_table(before_alarm_df):
     
     # Create data rows
     data_rows = []
-    for idx, (_, row_data) in enumerate(display_df.iterrows()):
+    for idx, (_, row_data) in enumerate(page_df.iterrows()):
         row_cells = []
         
         # Determine row background color
@@ -300,7 +366,7 @@ def create_pre_alarm_table(before_alarm_df):
             except:
                 pass
         
-        for col in display_df.columns:
+        for col in page_df.columns:
             value = row_data[col]
             width = column_widths.get(col, 100)
             
@@ -348,7 +414,7 @@ def create_pre_alarm_table(before_alarm_df):
                     bgcolor=row_color,
                     border=ft.border.all(1, ft.Colors.GREY_300),
                     width=width,
-                    height=50
+                    height=40
                 )
             )
         
@@ -385,11 +451,17 @@ def create_pre_alarm_table(before_alarm_df):
     ], spacing=0)
     
     # Wrap everything in horizontal scroll if table is wider than container
-    content = ft.Container(
+    table_with_scroll = ft.Container(
         content=ft.Row([
             table_content
         ], scroll=ft.ScrollMode.AUTO),  # Enable horizontal scroll
         expand=True,
     )
+    
+    # Combine pagination controls with the table
+    content = ft.Column([
+        pagination_controls,
+        table_with_scroll
+    ])
     
     return create_container_with_header("เหตุการ์ณก่อนเกิด Alarm", content, table_height)

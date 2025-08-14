@@ -1,5 +1,7 @@
 import flet as ft
 import pandas as pd
+import base64
+from io import BytesIO
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -43,11 +45,14 @@ def get_unique_statuses(filter_type="All"):
     df = state['df_logs']
     if df is None or len(df) == 0:
         return ["All"]
-    filtered_df = apply_filters(df, state['line_logs'], "All", None, "Logs")
+    filtered_df = apply_filters(df, state['line_logs'], "All")
     if 'PLCCODE' in filtered_df.columns:
         if filter_type == "Alarm":
             alarm_statuses = filtered_df[filtered_df['PLCCODE'] > 100]['PLCCODE'].dropna().unique().tolist()
             return ["All"] + sorted(alarm_statuses)
+        elif filter_type == "Normal":
+            normal_statuses = filtered_df[filtered_df['PLCCODE'] <= 100]['PLCCODE'].dropna().unique().tolist()
+            return ["All"] + sorted(normal_statuses)
         else:
             statuses = filtered_df['PLCCODE'].dropna().unique().tolist()
             return ["All"] + sorted(statuses)
@@ -57,10 +62,12 @@ def get_unique_statuses(filter_type="All"):
 def filter_data_by_type(df, filter_type):
     if df is None or len(df) == 0:
         return df
-    if filter_type == "Alarm" and 'PLCCODE' in df.columns:
-        return df[df['PLCCODE'] > 100]
-    else:
-        return df
+    if 'PLCCODE' in df.columns:
+        if filter_type == "Alarm":
+            return df[df['PLCCODE'] > 100]
+        elif filter_type == "Normal":
+            return df[df['PLCCODE'] <= 100]
+    return df
 
 # ---------- New helpers for date "chips" ----------
 def _date_chip(label: str, value: datetime | None, on_tap, text_control=None):
@@ -109,7 +116,7 @@ def create_filter_controls(page, show_status=True):
             create_dropdown(
                 "MSGTYPE",
                 filter_choice,
-                ["All", "Alarm"],
+                ["All", "Normal", "Alarm"],
                 120,
                 lambda e: on_filter_choice_change(e, page)
             )
@@ -145,6 +152,15 @@ def create_filter_controls(page, show_status=True):
     
     right_controls.append(
         create_button(
+            "Export",
+            ft.Icons.IMPORT_EXPORT,
+            lambda e: export_excel(page),
+            bgcolor=ft.Colors.GREEN,
+            color=ft.Colors.WHITE
+        )
+    )
+    right_controls.append(
+        create_button(
             "Clear Filter",
             ft.Icons.CLEAR,
             lambda e: clear_filter(e, page),
@@ -160,6 +176,44 @@ def create_filter_controls(page, show_status=True):
     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
 
 # ---------- Events ----------
+def export_excel(page):
+    df = state.get("df_logs")
+    if df is None or df.empty:
+        print("data is empty")
+        return
+    
+    line_logs = state.get("line_logs")
+    status_logs = state.get("status_logs")
+    filter_choice = state.get("filter_choice")
+
+    # First apply the line and status filters
+    df_filtered = apply_filters(df, line_logs, status_logs)
+    
+    # Then apply the MSGTYPE filter if needed
+    if filter_choice == "Alarm":
+        df_filtered = df_filtered[df_filtered['PLCCODE'] > 100]
+    elif filter_choice == "Normal":
+        df_filtered = df_filtered[df_filtered['PLCCODE'] <= 100]
+    
+    if df_filtered is None or df_filtered.empty:
+        print("data after filtered is empty")
+        page.snack_bar = ft.SnackBar(content=ft.Text("No data to export after applying filters"))
+        page.snack_bar.open = True
+        page.update()
+        return
+        
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            df_filtered.to_excel(writer, index=False, sheet_name="Logs")
+    buf.seek(0)
+    
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    filename = f"logs_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    data_url = f"data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
+
+    page.launch_url(data_url)
+    print(f"download data with filter {line_logs}, {status_logs}, {filter_choice}")
+    
 def on_line_filter_change(e, page):
     state['line_logs'] = e.control.value
     state['page_logs'] = 0

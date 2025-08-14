@@ -18,7 +18,7 @@ def create_chart_view(page):
     line_filter = state['line_logs']
     status_filter = state['status_logs']
     filter_choice = state.get('filter_choice', 'All')
-    filtered_df = apply_filters(df, line_filter, status_filter, state['selected_date'], "Logs")
+    filtered_df = apply_filters(df, line_filter, status_filter)
     filtered_df = filter_data_by_type(filtered_df, filter_choice)
 
     filter_controls = create_filter_controls(

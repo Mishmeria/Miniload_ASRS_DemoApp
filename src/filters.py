@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from src.state import state
 
-def apply_filters(df, line_filter, status_filter, date_filter, table_type):
+def apply_filters(df, line_filter, status_filter):
     filtered_df = df.copy()
 
     # SRM/LINE
@@ -11,32 +11,9 @@ def apply_filters(df, line_filter, status_filter, date_filter, table_type):
 
     # Status / PLCCODE
     if status_filter and status_filter != "All":
-        if table_type == "TaskLoops":
-            if status_filter == "Complete":
-                filtered_df = filtered_df[filtered_df["PLCCODE"] == 1]
-            elif status_filter == "Incomplete":
-                filtered_df = filtered_df[filtered_df["PLCCODE"] == 0]
-        else:
-            try:
-                status_value = float(status_filter)
-                filtered_df = filtered_df[filtered_df["PLCCODE"] == status_value]
-            except ValueError:
-                filtered_df = filtered_df[filtered_df["PLCCODE"].astype(str) == status_filter]
-
-    # NEW: Date-range filter (uses state.selected_date and state.end_date)
-    if 'CDATE' in filtered_df.columns:
-        if not pd.api.types.is_datetime64_any_dtype(filtered_df['CDATE']):
-            filtered_df['CDATE'] = pd.to_datetime(filtered_df['CDATE'], errors='coerce')
-
-        start_date = state.get('selected_date')
-        end_date = state.get('end_date') or start_date  # if end is None, single-day
+        status_value = int(status_filter)
+        filtered_df = filtered_df[filtered_df["PLCCODE"] == status_value]
         
-        if start_date:
-            start_dt = pd.Timestamp(start_date.strftime('%Y-%m-%d'))
-            end_excl = pd.Timestamp((end_date + timedelta(days=1)).strftime('%Y-%m-%d')) # type: ignore
-            mask = (filtered_df['CDATE'] >= start_dt) & (filtered_df['CDATE'] < end_excl)
-            filtered_df = filtered_df[mask]
-
     return filtered_df
 
 def get_status_stats(df, line_filter="All", selected_date=None):
@@ -57,7 +34,7 @@ def get_status_stats(df, line_filter="All", selected_date=None):
 
 def calculate_line_alarm_frequency():
     df = state['df_logs']
-    filtered_df = apply_filters(df, state['line_logs'], "All", state['selected_date'], "Logs")
+    filtered_df = apply_filters(df, state['line_logs'], "All")
     alarm_df = filtered_df[filtered_df['PLCCODE'] > 100].copy()
 
     if len(alarm_df) == 0:
