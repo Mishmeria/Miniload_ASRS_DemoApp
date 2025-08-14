@@ -168,12 +168,18 @@ def create_filter_controls(page, show_status=True):
         )
     )
 
-    return ft.Row([
-        ft.Container(content=ft.Row(left_controls, spacing=15), expand=1 ,padding=5),
-        ft.Container(content=center_controls, expand=1, alignment=ft.alignment.center,padding=5),
-        ft.Container(content=ft.Row(right_controls, alignment=ft.MainAxisAlignment.END),padding=5, expand=1),
+    progress_gauge = create_task_progress_gauge()
+
+    filter_row = ft.Row([
+        ft.Container(content=ft.Row(left_controls, spacing=15), expand=1, padding=5),
+        ft.Container(content=center_controls, expand=1, alignment=ft.alignment.center, padding=5),
+        ft.Container(content=ft.Row(right_controls, alignment=ft.MainAxisAlignment.END), padding=5, expand=1),
     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
 
+    return ft.Column([
+        filter_row,
+        progress_gauge
+    ])
 # ---------- Events ----------
 def export_excel(page):
     # Determine which tab is currently active
@@ -547,3 +553,39 @@ def refresh_data(e, page):
     finally:
         page.splash.visible = False
         page.update()
+
+def create_task_progress_gauge():
+    logs_stats, total = get_status_stats(state['df_logs'], state['line_logs'], state['selected_date'])
+    
+    if total == 0:
+        return ft.Container(
+            content=ft.Text("No TaskLogs data available", size=14, color=ft.Colors.GREY_600),
+            height=100, alignment=ft.alignment.center,
+            bgcolor=ft.Colors.GREY_50, border_radius=8,
+            border=ft.border.all(1, ft.Colors.GREY_300)
+        )
+    
+    complete_count = logs_stats[logs_stats["PLCCODE"] <= 100]["Count"].sum()
+    incomplete_count = logs_stats[logs_stats["PLCCODE"] > 100]["Count"].sum()
+
+    complete_percent = (complete_count / total) * 100 if total else 0
+    
+    header = ft.Row([
+        ft.Text(f"Logs ทั้งหมด : {total} records", size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
+        ft.Text(f"Status ปกติ : {complete_count} ครั้ง (คิดเป็น {complete_percent:.1f}% ของวัน)", size=14, color=ft.Colors.GREEN_700),
+        ft.Text(f"เกิด Alarm : {incomplete_count} ครั้ง (คิดเป็น {100-complete_percent:.1f}% ของวัน)", size=14, color=ft.Colors.RED_700)
+    ], alignment=ft.MainAxisAlignment.CENTER, spacing=25)
+    
+    # Use ProgressBar with custom colors
+    progress_bar = ft.ProgressBar(
+        value=complete_percent / 100,  # Value between 0 and 1
+        bgcolor=ft.Colors.RED_400,     # Background color (red for alarms)
+        color=ft.Colors.GREEN_400,     # Progress color (green for working)
+        height=20
+    )
+    
+    return ft.Container(
+        content=ft.Column([header, progress_bar, ft.Container(height=6)], spacing=5),
+        alignment=ft.alignment.center, padding=4,
+        bgcolor=ft.Colors.WHITE, border_radius=3,
+    )

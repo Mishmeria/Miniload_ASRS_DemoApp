@@ -7,6 +7,7 @@ state = {
     'line_logs': "All", 
     'status_logs': "All",
     'selected_date': None,
+    'end_date': None,
     'df_logs': None,
     'filter_choice': "All"
 }

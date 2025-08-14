@@ -8,7 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.state import state
 from src.filters import get_status_stats, apply_filters
-from src.ui_components import create_filter_controls # type: ignore
+from src.ui_components import create_filter_controls, create_task_progress_gauge
 
 from views.Status_Detail import Alarm_status_map, Normal_status_map , ALARM_CATEGORIES , CATEGORY_COLORS
 
@@ -20,44 +20,6 @@ else_width = 70
 # Add pagination state to the cache
 stats_cache = {'logs_stats': None, 'alarm_df': None, 'before_alarm_df': None, 'filter_state': None, 'current_page': 0}
 rows_per_page = 10  # Number of rows to display per page
-
-def create_task_progress_gauge():
-    logs_stats, total = get_status_stats(state['df_logs'], state['line_logs'], state['selected_date'])
-    
-    if total == 0:
-        return ft.Container(
-            content=ft.Text("No TaskLogs data available", size=14, color=ft.Colors.GREY_600),
-            height=100, alignment=ft.alignment.center,
-            bgcolor=ft.Colors.GREY_50, border_radius=8,
-            border=ft.border.all(1, ft.Colors.GREY_300)
-        )
-    
-    complete_count = logs_stats[logs_stats["PLCCODE"] <= 100]["Count"].sum()
-    incomplete_count = logs_stats[logs_stats["PLCCODE"] > 100]["Count"].sum()
-
-    complete_percent = (complete_count / total) * 100 if total else 0
-    
-    header = ft.Row([
-        ft.Text(f"Logs ทั้งหมด : {total} records", size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
-        ft.Text(f"Status ปกติ : {complete_count} ครั้ง (คิดเป็น {complete_percent:.1f}% ของวัน)", size=14, color=ft.Colors.GREEN_700),
-        ft.Text(f"เกิด Alarm : {incomplete_count} ครั้ง (คิดเป็น {100-complete_percent:.1f}% ของวัน)", size=14, color=ft.Colors.RED_700)
-    ], alignment=ft.MainAxisAlignment.CENTER, spacing=25)
-    
-    # Use ProgressBar with custom colors
-    progress_bar = ft.ProgressBar(
-        value=complete_percent / 100,  # Value between 0 and 1
-        bgcolor=ft.Colors.RED_400,     # Background color (red for alarms)
-        color=ft.Colors.GREEN_400,     # Progress color (green for working)
-        height=20,
-        border_radius=10,
-    )
-    
-    return ft.Container(
-        content=ft.Column([header, progress_bar, ft.Container(height=6)], spacing=5),
-        alignment=ft.alignment.center, padding=10,
-        bgcolor=ft.Colors.WHITE, border_radius=5,
-        border=ft.border.all(1, ft.Colors.GREY_300)
-    )
 
 def create_before_alarm_view(page):
     filter_controls = create_filter_controls(page=page, show_status=False)
@@ -111,11 +73,10 @@ def create_before_alarm_view(page):
                 }) # type: ignore
         
         try:
-            task_gauge = create_task_progress_gauge()
             # Modified to only show the pre-alarm table with pagination
             main_content = create_pre_alarm_table(stats_cache['before_alarm_df'], page)
             
-            main_container.content = ft.Column([filter_controls, task_gauge, main_content], expand=True)
+            main_container.content = ft.Column([filter_controls, main_content], expand=True)
             page.update()
         except Exception as e:
             print(f"Error updating statistics view: {e}")

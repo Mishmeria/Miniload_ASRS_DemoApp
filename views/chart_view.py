@@ -39,10 +39,17 @@ def create_chart_view(page):
         max_count = status_counts['Count'].max()
         chart_height = 470  # Fixed chart area height
         
+        start = state['selected_date'].strftime('%Y-%m-%d')
+        end = state['end_date'].strftime('%Y-%m-%d')
         # Chart Title
         chart_title = ft.Container(
             content=ft.Text(
-                "กราฟการเกิด Status ในแต่ละวัน",
+                spans=[
+                    ft.TextSpan("กราฟแสดงข้อมูลตั้งแต่วันที่  ", style=ft.TextStyle(color=ft.Colors.BLUE_800)),
+                    ft.TextSpan(str(start), style=ft.TextStyle(color=ft.Colors.RED)),
+                    ft.TextSpan("  ถึงวันที่  ", style=ft.TextStyle(color=ft.Colors.BLUE_800)),
+                    ft.TextSpan(str(end), style=ft.TextStyle(color=ft.Colors.RED)),
+                ],
                 size=20,
                 weight=ft.FontWeight.BOLD,
                 color=ft.Colors.BLUE_800,
