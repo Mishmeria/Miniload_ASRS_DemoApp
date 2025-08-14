@@ -7,9 +7,8 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from datetime import datetime, timedelta
 from src.state import state
-from src.filters import apply_filters, get_status_stats
+from src.filters import apply_filters
 from src.database import load_data
-from views.Status_Detail import ALARM_CATEGORIES, CATEGORY_COLORS , Alarm_status_map, Normal_status_map
 
 def create_dropdown(label, value, options, width, on_change):
     return ft.Dropdown(
