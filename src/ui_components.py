@@ -7,7 +7,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from datetime import datetime, timedelta
 from src.state import state
-from src.filters import apply_filters
+from src.filters import apply_filters, get_status_stats
 from src.database import load_data
 
 def create_dropdown(label, value, options, width, on_change):
@@ -176,42 +176,265 @@ def create_filter_controls(page, show_status=True):
 
 # ---------- Events ----------
 def export_excel(page):
-    df = state.get("df_logs")
-    if df is None or df.empty:
-        print("data is empty")
-        return
-    
-    line_logs = state.get("line_logs")
-    status_logs = state.get("status_logs")
-    filter_choice = state.get("filter_choice")
-
-    # First apply the line and status filters
-    df_filtered = apply_filters(df, line_logs, status_logs)
-    
-    # Then apply the MSGTYPE filter if needed
-    if filter_choice == "Alarm":
-        df_filtered = df_filtered[df_filtered['PLCCODE'] > 100]
-    elif filter_choice == "Normal":
-        df_filtered = df_filtered[df_filtered['PLCCODE'] <= 100]
-    
-    if df_filtered is None or df_filtered.empty:
-        print("data after filtered is empty")
-        page.snack_bar = ft.SnackBar(content=ft.Text("No data to export after applying filters"))
+    # Determine which tab is currently active
+    if not hasattr(page, 'tabs_control') or page.tabs_control is None:
+        page.snack_bar = ft.SnackBar(content=ft.Text("Cannot determine active tab"))
         page.snack_bar.open = True
         page.update()
         return
-        
-    buf = BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-            df_filtered.to_excel(writer, index=False, sheet_name="Logs")
-    buf.seek(0)
     
-    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-    filename = f"logs_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-    data_url = f"data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
+    current_tab_index = page.tabs_control.selected_index
+    tab_names = ["กราฟ", "ก่อนเกิด Alarm", "สรุป Alarm", "รายละเอียด"]
+    current_tab = tab_names[current_tab_index] if current_tab_index < len(tab_names) else "Unknown"
+    
+    # Get common filter values
+    line_logs = state.get("line_logs", "All")
+    status_logs = state.get("status_logs", "All")
+    filter_choice = state.get("filter_choice", "All")
+    
+    # Prepare data based on the active tab
+    if current_tab == "รายละเอียด" or current_tab == "กราฟ":  # Details tab or Chart tab
+        df = state.get("df_logs")
+        if df is None or df.empty:
+            show_no_data_message(page, f"No data available for {current_tab}")
+            return
+        
+        # Apply filters for both tabs in the same way
+        df_filtered = apply_filters(df, line_logs, status_logs)
+        
+        # Apply message type filter
+        if filter_choice == "Alarm":
+            df_filtered = df_filtered[df_filtered['PLCCODE'] > 100]
+        elif filter_choice == "Normal":
+            df_filtered = df_filtered[df_filtered['PLCCODE'] <= 100]
+        
+        # Set appropriate sheet name and filename based on tab
+        if current_tab == "รายละเอียด":
+            sheet_name = "Logs"
+            filename = f"logs_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        else:  # Chart tab
+            sheet_name = "Chart_Data"
+            filename = f"chart_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            
+        # Export the data to a single sheet
+        try:
+            buf = BytesIO()
+            with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+                df_filtered.to_excel(writer, index=False, sheet_name=sheet_name)
+            buf.seek(0)
+            
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            data_url = f"data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
 
-    page.launch_url(data_url)
-    print(f"download data with filter {line_logs}, {status_logs}, {filter_choice}")
+            page.launch_url(data_url)
+            print(f"Downloaded {current_tab} data with filters: line={line_logs}, status={status_logs}, type={filter_choice}")
+            
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Exported {current_tab} data successfully"))
+            page.snack_bar.open = True
+            page.update()
+        except Exception as ex:
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Export error: {str(ex)}"))
+            page.snack_bar.open = True
+            page.update()
+    
+    elif current_tab == "สรุป Alarm":  # Alarm Summary tab
+        from views.Status_Detail import Alarm_status_map
+        
+        df = state.get("df_logs")
+        if df is None or df.empty:
+            show_no_data_message(page, "No alarm summary data available")
+            return
+        
+        try:
+            # First filter by line
+            df_filtered = apply_filters(df, line_logs, "All")
+            
+            # Then filter for alarms only
+            alarm_df = df_filtered[df_filtered['PLCCODE'] > 100]
+            
+            if alarm_df.empty:
+                show_no_data_message(page, "No alarm data after filtering")
+                return
+            
+            # Create the same tables as shown in the UI
+            # 1. Alarm frequency table
+            plc_counts = alarm_df['PLCCODE'].value_counts().reset_index()
+            plc_counts.columns = ['PLCCODE', 'Count']
+            plc_counts = plc_counts.sort_values('Count', ascending=False)
+            
+            # Calculate percentages
+            total_alarms = plc_counts['Count'].sum()
+            plc_counts['Percentage'] = (plc_counts['Count'] / total_alarms * 100).round(1).astype(str) + '%'
+            
+            # Add descriptions
+            plc_counts['Description'] = plc_counts['PLCCODE'].map(
+                lambda x: Alarm_status_map.get(x, "Unknown alarm")
+            )
+            
+            # 2. Line summary table
+            line_summary = alarm_df.groupby('ASRS').size().reset_index(name='Total_Alarms')
+            line_summary = line_summary.sort_values('Total_Alarms', ascending=False)
+            line_summary['ASRS_Line'] = line_summary['ASRS'].apply(lambda x: f"SRM{x:02d}")
+            
+            # Export both tables to separate sheets
+            buf = BytesIO()
+            with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+                # First sheet: Alarm frequency
+                plc_counts.to_excel(writer, index=False, sheet_name="Alarm_Frequency")
+                
+                # Second sheet: Line summary
+                line_summary.to_excel(writer, index=False, sheet_name="Line_Summary")
+                
+                # Optional: Add a third sheet with the raw alarm data
+                alarm_df.to_excel(writer, index=False, sheet_name="Raw_Alarm_Data")
+            
+            buf.seek(0)
+            
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            data_url = f"data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
+
+            page.launch_url(data_url)
+            print(f"Downloaded Alarm Summary data with filters: line={line_logs}")
+            
+            page.snack_bar = ft.SnackBar(content=ft.Text("Exported Alarm Summary data successfully"))
+            page.snack_bar.open = True
+            page.update()
+        except Exception as ex:
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Error preparing summary data: {str(ex)}"))
+            page.snack_bar.open = True
+            page.update()
+            return
+    
+    elif current_tab == "ก่อนเกิด Alarm":  # Before Alarm tab
+        # Get data from the stats_cache in before_alm_view
+        try:
+            from views.before_alm_view import stats_cache, process_alarm_data
+            from views.Status_Detail import Alarm_status_map, Normal_status_map
+            
+            # Get both alarm_df and before_alarm_df
+            alarm_df = stats_cache.get('alarm_df')
+            before_alarm_df = stats_cache.get('before_alarm_df')
+            
+            # If not available in cache, try to generate them
+            if alarm_df is None or before_alarm_df is None or alarm_df.empty or before_alarm_df.empty:
+                alarm_df, before_alarm_df = process_alarm_data()
+            
+            if (alarm_df is None or alarm_df.empty) and (before_alarm_df is None or before_alarm_df.empty):
+                show_no_data_message(page, "No before-alarm data available")
+                return
+            
+            # Format the before_alarm_df data to match the UI display
+            if before_alarm_df is not None and not before_alarm_df.empty:
+                # Make a copy to avoid modifying the original DataFrame
+                display_df = before_alarm_df.copy()
+                
+                # Sort by CDATE descending (same as in the UI)
+                display_df = display_df.sort_values('CDATE', ascending=False)
+                
+                # Add missing columns with N/A values
+                for col in ['BARCODE', 'Present_Level (D145)', 'Present_Bay_Arm1 (D140)']:
+                    if col not in display_df.columns:
+                        display_df[col] = "N/A"
+                
+                # Add Detail column for Alarm status
+                if 'Alarm' in display_df.columns:
+                    display_df['Detail'] = display_df['Alarm'].astype(int).map(
+                        lambda x: Alarm_status_map.get(x, "ไม่ทราบสถานะ")
+                    )
+                
+                # Add Description column for Status
+                if 'PLCCODE' in display_df.columns:
+                    display_df['Description'] = display_df['PLCCODE'].astype(int).map(
+                        lambda x: Normal_status_map.get(x, "ไม่ทราบสถานะ")
+                    )
+                
+                # Define the desired column order (same as in the UI)
+                desired_cols = ['ASRS', 'BARCODE', 'Present_Level (D145)', 'Present_Bay_Arm1 (D140)', 
+                               'AlarmTime', 'Alarm', 'Detail', 'CDATE', 'PLCCODE', 'Description', 'Duration']
+                
+                # Only include columns that exist in the DataFrame
+                available_cols = [col for col in desired_cols if col in display_df.columns]
+                
+                # Select only the available columns in the desired order
+                display_df = display_df[available_cols]
+                
+                # Rename columns to match UI display names
+                column_display_names = {
+                    'ASRS': 'SRM',
+                    'BARCODE': 'BARCODE',
+                    'Present_Level (D145)': 'Level',
+                    'Present_Bay_Arm1 (D140)': 'Bay',
+                    'AlarmTime': 'เวลาที่เกิด Alarm',
+                    'Alarm': 'รหัส Alarm',
+                    'Detail': 'รายละเอียด Alarm',
+                    'CDATE': 'เวลาของ Status ล่าสุดก่อนเกิด Alarm',
+                    'PLCCODE': 'รหัส Status',
+                    'Description': 'รายละเอียด Status',
+                    'Duration': 'ระยะเวลาก่อนเกิด Alarm (วินาที)'
+                }
+                
+                # Rename the columns for export
+                display_df = display_df.rename(columns=column_display_names)
+                
+                # Format timestamps for better readability in Excel
+                for col in ['เวลาที่เกิด Alarm', 'เวลาของ Status ล่าสุดก่อนเกิด Alarm']:
+                    if col in display_df.columns:
+                        display_df[col] = display_df[col].apply(
+                            lambda x: x.strftime("%Y-%m-%d %H:%M:%S") if isinstance(x, pd.Timestamp) else x
+                        )
+                
+                before_alarm_df = display_df
+            
+            # Export the data to Excel with multiple sheets
+            buf = BytesIO()
+            with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+                # Export before_alarm_df as the main sheet
+                if before_alarm_df is not None and not before_alarm_df.empty:
+                    before_alarm_df.to_excel(writer, index=False, sheet_name="Before_Alarm")
+                
+                # Export alarm_df as a secondary sheet if available
+                if alarm_df is not None and not alarm_df.empty:
+                    # Format alarm_df for better readability
+                    alarm_display = alarm_df.copy()
+                    if 'PLCCODE' in alarm_display.columns:
+                        alarm_display['Detail'] = alarm_display['PLCCODE'].astype(int).map(
+                            lambda x: Alarm_status_map.get(x, "ไม่ทราบสถานะ")
+                        )
+                    if 'CDATE' in alarm_display.columns:
+                        alarm_display['CDATE'] = alarm_display['CDATE'].apply(
+                            lambda x: x.strftime("%Y-%m-%d %H:%M:%S") if isinstance(x, pd.Timestamp) else x
+                        )
+                    alarm_display.to_excel(writer, index=False, sheet_name="Alarms")
+            
+            buf.seek(0)
+            
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            data_url = f"data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
+
+            page.launch_url(data_url)
+            print(f"Downloaded Before Alarm data with filters: line={line_logs}")
+            
+            page.snack_bar = ft.SnackBar(content=ft.Text("Exported Before Alarm data successfully"))
+            page.snack_bar.open = True
+            page.update()
+        except Exception as ex:
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Error accessing before alarm data: {str(ex)}"))
+            page.snack_bar.open = True
+            page.update()
+            return
+    
+    else:
+        page.snack_bar = ft.SnackBar(content=ft.Text(f"Export not implemented for tab: {current_tab}"))
+        page.snack_bar.open = True
+        page.update()
+        return
+
+def show_no_data_message(page, message):
+    """Helper function to show a consistent no-data message"""
+    print(message)
+    page.snack_bar = ft.SnackBar(content=ft.Text(message))
+    page.snack_bar.open = True
+    page.update()
     
 def on_line_filter_change(e, page):
     state['line_logs'] = e.control.value
@@ -309,7 +532,7 @@ def refresh_data(e, page):
         state['status_loops'] = "All"
         state['status_logs'] = "All"
         state['filter_choice'] = "All"
-        from API_request import load_data
+        from src.database import load_data  # Changed from API_request to match your imports
         start = state.get('selected_date')
         if start:
             end = state.get('end_date') or start
