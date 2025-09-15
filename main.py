@@ -1,13 +1,20 @@
 import flet as ft
 from datetime import datetime, timedelta
 from src.state import state
-from src.database import load_data
 from views.asrs_logs_view import create_data_table_view as create_asrs_logs_view
 from views.statistics_view import create_statistics_view
 from views.chart_view import create_chart_view
 from views.before_alm_view import create_before_alarm_view
 from src.ui_components import on_date_change, on_end_date_change
 import threading
+
+use_mock_data = True  # Set to True to use mock data for testing
+
+if use_mock_data := True:
+    from src.mock_database import load_data
+else:
+    from src.database import load_data
+
 
 # Initialize state variables
 state['selected_date'] = datetime.now()
