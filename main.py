@@ -10,7 +10,7 @@ import threading
 
 use_mock_data = True  # Set to True to use mock data for testing
 
-if use_mock_data := True:
+if use_mock_data == True:
     from src.mock_database import load_data
 else:
     from src.database import load_data
